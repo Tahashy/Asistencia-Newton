@@ -3,112 +3,127 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, X, CheckCircle } from 'lucide-react';
 
 export const QRScanner = ({ onScanSuccess, onClose }) => {
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState('');
-  const scannerRef = useRef(null);
-  const html5QrCodeRef = useRef(null);
+    const [error, setError] = useState('');
+    const [isStopping, setIsStopping] = useState(false);
+    const html5QrCodeRef = useRef(null);
 
-  const startScanner = async () => {
-    try {
-      setError('');
-      setScanning(true);
+    const startScanner = async () => {
+        try {
+            setError('');
 
-      html5QrCodeRef.current = new Html5Qrcode("qr-reader");
+            const element = document.getElementById("qr-reader");
+            if (!element) return;
 
-      await html5QrCodeRef.current.start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
-        (decodedText) => {
-          // QR detectado
-          html5QrCodeRef.current.stop();
-          onScanSuccess(decodedText);
-        },
-        (errorMessage) => {
-          // Error de escaneo (normal, se ejecuta constantemente)
+            html5QrCodeRef.current = new Html5Qrcode("qr-reader");
+
+            // Determinar tamaño óptimo del cuadro de escaneo (responsive)
+            const width = window.innerWidth;
+            const qrBoxSize = width < 640 ? 200 : 250;
+
+            await html5QrCodeRef.current.start(
+                { facingMode: "environment" },
+                {
+                    fps: 10,
+                    qrbox: { width: qrBoxSize, height: qrBoxSize },
+                    aspectRatio: 1.0
+                },
+                (decodedText) => {
+                    stopScanner(decodedText);
+                },
+                (errorMessage) => {
+                    // Ignorar errores constantes de búsqueda
+                }
+            );
+        } catch (err) {
+            console.error('Error starting scanner:', err);
+            setError('No se pudo acceder a la cámara. Por favor, asegúrate de dar los permisos necesarios y usar HTTPS.');
         }
-      );
-    } catch (err) {
-      setError('No se pudo acceder a la cámara');
-      setScanning(false);
-    }
-  };
-
-  const stopScanner = () => {
-    if (html5QrCodeRef.current) {
-      html5QrCodeRef.current.stop().then(() => {
-        html5QrCodeRef.current.clear();
-      }).catch(() => {});
-    }
-    setScanning(false);
-  };
-
-  useEffect(() => {
-    startScanner();
-
-    return () => {
-      stopScanner();
     };
-  }, []);
 
-  const handleClose = () => {
-    stopScanner();
-    onClose();
-  };
+    const stopScanner = async (result = null) => {
+        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+            setIsStopping(true);
+            try {
+                await html5QrCodeRef.current.stop();
+                html5QrCodeRef.current.clear();
+                if (result) {
+                    onScanSuccess(result);
+                }
+            } catch (err) {
+                console.error('Error stopping scanner:', err);
+            } finally {
+                setIsStopping(false);
+            }
+        }
+    };
 
-  return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex items-center gap-3">
-            <Camera className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-bold">Escanear Código QR</h2>
-          </div>
-          <button
-            onClick={handleClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+    useEffect(() => {
+        startScanner();
 
-        {/* Scanner */}
-        <div className="p-6">
-          {error && (
-            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-              {error}
+        return () => {
+            if (html5QrCodeRef.current) {
+                stopScanner();
+            }
+        };
+    }, []);
+
+    const handleClose = async () => {
+        await stopScanner();
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/95 z-[70] flex items-center justify-center sm:p-4">
+            <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl w-full h-full sm:h-auto sm:max-w-md overflow-hidden flex flex-col">
+                {/* Header - Más compacto en móvil */}
+                <div className="flex items-center justify-between px-4 py-4 sm:p-6 border-b bg-white">
+                    <div className="flex items-center gap-3">
+                        <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+                        <h2 className="text-lg sm:text-xl font-bold">Escanear QR</h2>
+                    </div>
+                    <button
+                        onClick={handleClose}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                        <X className="w-6 h-6 text-gray-500" />
+                    </button>
+                </div>
+
+                {/* Scanner Body - Expandible */}
+                <div className="flex-1 flex flex-col p-4 sm:p-6 justify-center">
+                    {error && (
+                        <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm text-center">
+                            {error}
+                        </div>
+                    )}
+
+                    <div
+                        id="qr-reader"
+                        className="rounded-xl overflow-hidden bg-black aspect-square w-full mx-auto max-w-[320px] shadow-lg border-4 border-blue-100"
+                    ></div>
+
+                    <div className="mt-6 text-center">
+                        <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-xs sm:text-sm font-medium border border-blue-100">
+                            <CheckCircle className="w-4 h-4 animate-pulse" />
+                            <span>Buscando automáticamente...</span>
+                        </div>
+                        <p className="text-gray-500 text-[10px] sm:text-xs mt-2 uppercase tracking-widest font-bold">
+                            Apunta al código QR del carnet
+                        </p>
+                    </div>
+                </div>
+
+                {/* Footer - Fijo abajo en móvil */}
+                <div className="p-4 sm:p-6 border-t bg-gray-50">
+                    <button
+                        onClick={handleClose}
+                        disabled={isStopping}
+                        className="w-full bg-white hover:bg-gray-100 text-gray-700 py-3 rounded-xl font-bold border border-gray-200 transition-all disabled:opacity-50 text-sm"
+                    >
+                        CANCELAR
+                    </button>
+                </div>
             </div>
-          )}
-
-          <div 
-            id="qr-reader" 
-            className="rounded-lg overflow-hidden"
-            style={{ width: '100%' }}
-          ></div>
-
-          {scanning && (
-            <div className="mt-4 text-center">
-              <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-lg">
-                <CheckCircle className="w-5 h-5 animate-pulse" />
-                <span className="font-semibold">Buscando código QR...</span>
-              </div>
-            </div>
-          )}
         </div>
-
-        {/* Footer */}
-        <div className="p-6 border-t bg-gray-50 rounded-b-2xl">
-          <button
-            onClick={handleClose}
-            className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-lg font-semibold transition-colors"
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
 };
