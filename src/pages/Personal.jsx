@@ -7,10 +7,12 @@ import QRCode from '../components/ui/QRCode';
 import Pagination from '../components/ui/Pagination';
 
 const Personal = () => {
-    const { employees, agregarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading } = useApp();
+    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading } = useApp();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [employeeToDelete, setEmployeeToDelete] = useState(null);
 
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
@@ -48,6 +50,20 @@ const Personal = () => {
         setFormData(employee);
         setIsEditing(true);
         setIsModalOpen(true);
+    };
+
+    const handleDelete = (employee) => {
+        setEmployeeToDelete(employee);
+        setIsDeleting(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!employeeToDelete) return;
+        const res = await eliminarEmpleado(employeeToDelete.id);
+        if (res.success) {
+            setIsDeleting(false);
+            setEmployeeToDelete(null);
+        }
     };
 
     const resetForm = () => {
@@ -184,6 +200,7 @@ const Personal = () => {
                                                 <Edit className="w-5 h-5" />
                                             </button>
                                             <button
+                                                onClick={() => handleDelete(employee)}
                                                 className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-all"
                                                 title="Eliminar"
                                             >
@@ -347,6 +364,38 @@ const Personal = () => {
                                 >
                                     <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                                     Regenerar Identificador
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
+            {isDeleting && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Trash2 className="w-8 h-8" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-2">¿Seguro de eliminar?</h3>
+                            <p className="text-gray-600 mb-6">
+                                Esta acción eliminará a <span className="font-bold text-gray-800">{employeeToDelete?.nombre} {employeeToDelete?.apellido}</span> permanentemente del sistema.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => { setIsDeleting(false); setEmployeeToDelete(null); }}
+                                    className="flex-1 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={isLoading}
+                                    className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-200 disabled:opacity-50"
+                                >
+                                    {isLoading ? 'Eliminando...' : 'Sí, Eliminar'}
                                 </button>
                             </div>
                         </div>

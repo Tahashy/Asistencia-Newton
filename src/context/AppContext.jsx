@@ -265,6 +265,22 @@ const AppProvider = ({ children }) => {
     }
   };
 
+  const eliminarEmpleado = async (id) => {
+    setIsLoading(true);
+    try {
+      await appsScript.deleteEmployee(id);
+      setEmployees(employees.filter(e => e.id !== id));
+      showToast('Empleado eliminado correctamente', 'success');
+      return { success: true };
+    } catch (error) {
+      console.error('Error al eliminar empleado:', error);
+      showToast('Error al eliminar empleado', 'error');
+      return { success: false };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const regenerarQR = async (employeeId) => {
     setIsLoading(true);
     try {
@@ -443,6 +459,7 @@ const AppProvider = ({ children }) => {
     getEstadisticasHistoricas,
     agregarEmpleado,
     actualizarEmpleado,
+    eliminarEmpleado,
     regenerarQR,
     registrarJustificacion,
     actualizarConfiguracion,

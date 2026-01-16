@@ -6,23 +6,23 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz9ed1f1revMdbm34zEC
 const makeRequest = async (action, data = null) => {
   try {
     let url = `${SCRIPT_URL}?action=${action}`;
-    
+
     if (data) {
       // Enviar data como parámetro en la URL para evitar CORS
       url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
     }
-    
+
     const response = await fetch(url, {
       method: 'GET',
       redirect: 'follow'
     });
-    
+
     const result = await response.json();
-    
+
     if (!result.success) {
       throw new Error(result.error || 'Error en la operación');
     }
-    
+
     return result;
   } catch (error) {
     console.error(`Error en ${action}:`, error);
@@ -46,6 +46,11 @@ export const addEmployee = async (employee) => {
 
 export const updateEmployee = async (employeeId, data) => {
   const result = await makeRequest('updateEmployee', { id: employeeId, data });
+  return result;
+};
+
+export const deleteEmployee = async (employeeId) => {
+  const result = await makeRequest('deleteEmployee', { id: employeeId });
   return result;
 };
 
