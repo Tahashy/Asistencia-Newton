@@ -1,27 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, X, CheckCircle } from 'lucide-react';
+import { Camera, X, CheckCircle, SwitchCamera } from 'lucide-react';
 
 export const QRScanner = ({ onScanSuccess, onClose }) => {
     const [error, setError] = useState('');
     const [isStopping, setIsStopping] = useState(false);
+    const [facingMode, setFacingMode] = useState('environment'); // environment = trasera, user = frontal
     const html5QrCodeRef = useRef(null);
 
-    const startScanner = async () => {
+    const startScanner = async (currentFacingMode) => {
         try {
             setError('');
 
             const element = document.getElementById("qr-reader");
             if (!element) return;
 
-            html5QrCodeRef.current = new Html5Qrcode("qr-reader");
+            // Si ya existe instancia, usarla, si no crear nueva
+            if (!html5QrCodeRef.current) {
+                html5QrCodeRef.current = new Html5Qrcode("qr-reader");
+            }
 
             // Determinar tamaño óptimo del cuadro de escaneo (responsive)
             const width = window.innerWidth;
             const qrBoxSize = width < 640 ? 200 : 250;
 
             await html5QrCodeRef.current.start(
-                { facingMode: "environment" },
+                { facingMode: currentFacingMode },
                 {
                     fps: 10,
                     qrbox: { width: qrBoxSize, height: qrBoxSize },
@@ -45,8 +49,8 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
             setIsStopping(true);
             try {
                 await html5QrCodeRef.current.stop();
-                html5QrCodeRef.current.clear();
                 if (result) {
+                    html5QrCodeRef.current.clear(); // Limpiar solo si terminamos con éxito
                     onScanSuccess(result);
                 }
             } catch (err) {
@@ -57,18 +61,41 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
         }
     };
 
+    const toggleCamera = async () => {
+        if (isStopping) return;
+
+        const newMode = facingMode === 'environment' ? 'user' : 'environment';
+        setFacingMode(newMode);
+
+        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+            await stopScanner(); // Detener actual pero sin resultado
+        }
+
+        // Pequeño delay para asegurar limpieza antes de reiniciar
+        setTimeout(() => {
+            startScanner(newMode);
+        }, 300);
+    };
+
     useEffect(() => {
-        startScanner();
+        // Iniciar al montar
+        startScanner(facingMode);
 
         return () => {
-            if (html5QrCodeRef.current) {
-                stopScanner();
+            // Limpieza al desmontar
+            if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+                html5QrCodeRef.current.stop().then(() => {
+                    html5QrCodeRef.current.clear();
+                }).catch(err => console.error("Error cleanup", err));
             }
         };
     }, []);
 
     const handleClose = async () => {
-        await stopScanner();
+        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop();
+            html5QrCodeRef.current.clear();
+        }
         onClose();
     };
 
@@ -81,12 +108,22 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                         <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                         <h2 className="text-lg sm:text-xl font-bold">Escanear QR</h2>
                     </div>
-                    <button
-                        onClick={handleClose}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <X className="w-6 h-6 text-gray-500" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleCamera}
+                            disabled={isStopping}
+                            className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors flex flex-col items-center justify-center"
+                            title="Cambiar Cámara"
+                        >
+                            <SwitchCamera className="w-6 h-6" />
+                        </button>
+                        <button
+                            onClick={handleClose}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <X className="w-6 h-6 text-gray-500" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Scanner Body - Expandible */}
@@ -109,6 +146,9 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                         </div>
                         <p className="text-gray-500 text-[10px] sm:text-xs mt-2 uppercase tracking-widest font-bold">
                             Apunta al código QR del carnet
+                        </p>
+                        <p className="text-blue-400 text-[10px] mt-1">
+                            Cámara: {facingMode === 'environment' ? 'Trasera' : 'Frontal'}
                         </p>
                     </div>
                 </div>
