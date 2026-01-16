@@ -15,6 +15,13 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
             const element = document.getElementById("qr-reader");
             if (!element) return;
 
+            // Verificar contexto seguro (HTTPS o localhost)
+            const isSecureContext = window.isSecureContext;
+            if (!isSecureContext) {
+                setError('⚠️ La cámara requiere HTTPS. Si estás en móvil, usa ngrok o un túnel seguro, o prueba en localhost.');
+                return;
+            }
+
             // Si ya existe instancia, usarla, si no crear nueva
             if (!html5QrCodeRef.current) {
                 html5QrCodeRef.current = new Html5Qrcode("qr-reader");
@@ -24,23 +31,48 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
             const width = window.innerWidth;
             const qrBoxSize = width < 640 ? 200 : 250;
 
-            await html5QrCodeRef.current.start(
-                { facingMode: currentFacingMode },
-                {
-                    fps: 10,
-                    qrbox: { width: qrBoxSize, height: qrBoxSize },
-                    aspectRatio: 1.0
-                },
-                (decodedText) => {
-                    stopScanner(decodedText);
-                },
-                (errorMessage) => {
-                    // Ignorar errores constantes de búsqueda
+            const config = {
+                fps: 10,
+                qrbox: { width: qrBoxSize, height: qrBoxSize },
+                aspectRatio: 1.0
+            };
+
+            try {
+                // Intento 1: Modo solicitado
+                await html5QrCodeRef.current.start(
+                    { facingMode: currentFacingMode },
+                    config,
+                    (decodedText) => stopScanner(decodedText),
+                    (errorMessage) => { }
+                );
+            } catch (startError) {
+                console.warn("Fallo arranque directo, intentando fallback...", startError);
+
+                // Intento 2: Buscar cualquier cámara y usar la primera
+                try {
+                    const devices = await Html5Qrcode.getCameras();
+                    if (devices && devices.length) {
+                        await html5QrCodeRef.current.start(
+                            devices[0].id,
+                            config,
+                            (decodedText) => stopScanner(decodedText),
+                            (errorMessage) => { }
+                        );
+                    } else {
+                        throw new Error("No se encontraron cámaras");
+                    }
+                } catch (fallbackError) {
+                    throw startError; // Lanzar el error original si el fallback falla
                 }
-            );
+            }
+
         } catch (err) {
             console.error('Error starting scanner:', err);
-            setError('No se pudo acceder a la cámara. Por favor, asegúrate de dar los permisos necesarios y usar HTTPS.');
+            let msg = 'No se pudo acceder a la cámara.';
+            if (err.name === 'NotAllowedError') msg += ' Permiso denegado.';
+            if (err.name === 'NotFoundError') msg += ' No se encontró dispositivo.';
+            if (err.name === 'NotReadableError') msg += ' El hardware está ocupado o fallando.';
+            setError(msg + ' Asegúrate de dar permisos y usar HTTPS.');
         }
     };
 
