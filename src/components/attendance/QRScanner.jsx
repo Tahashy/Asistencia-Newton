@@ -26,7 +26,6 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                 await html5QrCodeRef.current.stop();
             }
             
-            // Verificamos si el elemento todavía existe antes de limpiar
             if (html5QrCodeRef.current && document.getElementById("qr-reader")) {
                 await html5QrCodeRef.current.clear();
             }
@@ -37,6 +36,7 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
             scannerStateRef.current = 'IDLE';
             if (mountedRef.current) {
                 setIsScanning(false);
+                setIsStopping(false); // IMPORTANTE: Resetear el estado de detenido
                 if (result) onScanSuccess(result);
             }
         }
@@ -48,7 +48,10 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
         try {
             setError('');
             scannerStateRef.current = 'STARTING';
-            if (mountedRef.current) setIsScanning(false);
+            if (mountedRef.current) {
+                setIsScanning(false);
+                setIsStopping(false);
+            }
 
             const element = document.getElementById("qr-reader");
             if (!element) return;
