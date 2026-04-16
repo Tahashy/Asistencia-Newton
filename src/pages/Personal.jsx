@@ -7,16 +7,17 @@ import QRCode from '../components/ui/QRCode';
 import Pagination from '../components/ui/Pagination';
 
 const Personal = () => {
-    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading } = useApp();
+    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading, eliminarTodo } = useApp();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [employeeToDelete, setEmployeeToDelete] = useState(null);
+    const [isDeletingAll, setIsDeletingAll] = useState(false);
 
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 7;
+    const [itemsPerPage, setItemsPerPage] = useState(7);
 
     const [formData, setFormData] = useState({
         id: '',
@@ -66,6 +67,14 @@ const Personal = () => {
         }
     };
 
+    const confirmDeleteAll = async () => {
+        const res = await eliminarTodo();
+        if (res.success) {
+            setIsDeletingAll(false);
+            setCurrentPage(1);
+        }
+    };
+
     const resetForm = () => {
         setFormData({
             id: '',
@@ -112,17 +121,50 @@ const Personal = () => {
                         {employees.length} {employees.length === 1 ? (config?.nombreEntidadSingular || 'registro') : (config?.nombreEntidadPlural?.toLowerCase() || 'registros')} registrados
                     </p>
                 </div>
-                <button
-                    onClick={() => { resetForm(); setIsModalOpen(true); }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg shadow-blue-200 active:scale-95"
-                >
-                    <UserPlus className="w-5 h-5" />
-                    Añadir {config?.nombreEntidadSingular || 'Personal'}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                    {/* BOTON DE PELIGRO - VACIAR TODO */}
+                    <button
+                        onClick={() => setIsDeletingAll(true)}
+                        className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all border border-red-200 active:scale-95"
+                        title="Purgar o Vaciar el sistema por completo"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                        <span className="hidden xl:inline">Resetear Sistema</span>
+                    </button>
+
+                    <button
+                        onClick={() => { resetForm(); setIsModalOpen(true); }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg shadow-blue-200 active:scale-95"
+                    >
+                        <UserPlus className="w-5 h-5" />
+                        Añadir {config?.nombreEntidadSingular || 'Personal'}
+                    </button>
+                </div>
             </div>
 
             {/* TABLA DE PERSONAL */}
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 animate-in fade-in duration-500">
+                {/* Controles superiores de tabla */}
+                <div className="px-6 py-4 flex justify-between items-center bg-gray-50/50 border-b border-gray-100">
+                    <div className="flex items-center gap-3 text-sm">
+                        <span className="font-semibold text-gray-500 uppercase tracking-wider text-xs">Mostrar</span>
+                        <select
+                            value={itemsPerPage}
+                            onChange={(e) => {
+                                setItemsPerPage(Number(e.target.value));
+                                setCurrentPage(1); // Volver al inicio al cambiar el tamaño de cantidad
+                            }}
+                            className="border border-gray-200 rounded-lg px-3 py-1.5 outline-none hover:border-blue-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-50 bg-white shadow-sm transition-all text-sm font-bold text-gray-700 cursor-pointer"
+                        >
+                            <option value={7}>7 filas</option>
+                            <option value={15}>15 filas</option>
+                            <option value={30}>30 filas</option>
+                            <option value={50}>50 filas</option>
+                            <option value={100}>100 filas</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -396,6 +438,46 @@ const Personal = () => {
                                     className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-200 disabled:opacity-50"
                                 >
                                     {isLoading ? 'Eliminando...' : 'Sí, Eliminar'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL CRITICO DE ELIMINAR TODO */}
+            {isDeletingAll && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 border-2 border-red-100">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner shadow-red-200">
+                                <Trash2 className="w-10 h-10 animate-bounce" />
+                            </div>
+                            <h3 className="text-2xl font-black text-gray-800 mb-3 uppercase tracking-wider">¡Alerta Nivel Rojo!</h3>
+                            <p className="text-gray-600 mb-2">
+                                Estás a punto de borrar <strong>completamente</strong> la base de datos de tu colegio/empresa.
+                            </p>
+                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-8 text-sm text-red-700 text-left">
+                                <p className="font-bold mb-2">Se borrará de forma irrecuperable:</p>
+                                <ul className="list-disc list-inside space-y-1">
+                                    <li>Absolutamente todos los alumnos/personal.</li>
+                                    <li>Todo el historial histórico de asistencias y faltas.</li>
+                                    <li>Los códigos QR actuales quedarán inútiles.</li>
+                                </ul>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <button
+                                    onClick={() => setIsDeletingAll(false)}
+                                    className="flex-1 px-6 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-all"
+                                >
+                                    ¡Cancelar Ahora Mismo!
+                                </button>
+                                <button
+                                    onClick={confirmDeleteAll}
+                                    disabled={isLoading}
+                                    className="flex-1 px-6 py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-red-200 disabled:opacity-50"
+                                >
+                                    {isLoading ? 'Purgando sistema...' : 'Sí, Destruir Todo'}
                                 </button>
                             </div>
                         </div>

@@ -89,19 +89,39 @@ const AppProvider = ({ children }) => {
 
   const hideToast = () => setToast(null);
 
-  const getCurrentDate = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+  const getCurrentDate = (dateObj = new Date()) => {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
 
-  const getCurrentTime = () => {
-    const d = new Date();
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
+  const getCurrentTime = (dateObj = new Date()) => {
+    const hours = String(dateObj.getHours()).padStart(2, '0');
+    const minutes = String(dateObj.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
+  };
+
+  // Novedad: Obtener el tiempo inmutable de red (WorldTimeAPI)
+  const getNetworkTime = async () => {
+    try {
+      // Configuramos 4 segundos de timeout para no bloquear eternamente 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      
+      const response = await fetch('https://worldtimeapi.org/api/timezone/America/Lima', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error('Falló la petición al servidor de tiempo');
+      
+      const data = await response.json();
+      return new Date(data.datetime);
+    } catch (error) {
+      console.warn('Alerta: No se pudo verificar la hora global por internet. Usando tiempo local que podría ser impreciso o adulterado.', error);
+      return new Date(); // Fallback si el internet es intermitente o la api falla
+    }
   };
 
   const calcularEstado = (horaEntrada) => {
@@ -122,8 +142,11 @@ const AppProvider = ({ children }) => {
   const registrarEntrada = async (employeeId, metodo = 'Manual') => {
     setIsLoading(true);
     try {
-      const fecha = getCurrentDate();
-      const hora = getCurrentTime();
+      // 🚨 PUNTO DE SEGURIDAD: Obtenemos el tiempo real desde Internet 
+      // en vez de usar el reloj de la PC o Smartphone.
+      const realDate = await getNetworkTime();
+      const fecha = getCurrentDate(realDate);
+      const hora = getCurrentTime(realDate);
 
       const registroExistente = attendance.find(
         a => a.employeeId === employeeId && a.fecha === fecha
@@ -180,8 +203,10 @@ const AppProvider = ({ children }) => {
   const registrarSalida = async (employeeId) => {
     setIsLoading(true);
     try {
-      const fecha = getCurrentDate();
-      const hora = getCurrentTime();
+      // 🚨 PUNTO DE SEGURIDAD: Obtenemos la hora real para la salida
+      const realDate = await getNetworkTime();
+      const fecha = getCurrentDate(realDate);
+      const hora = getCurrentTime(realDate);
 
       const registroExistente = attendance.find(
         a => a.employeeId === employeeId && a.fecha === fecha
@@ -275,6 +300,23 @@ const AppProvider = ({ children }) => {
     } catch (error) {
       console.error('Error al eliminar empleado:', error);
       showToast('Error al eliminar empleado', 'error');
+      return { success: false };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const eliminarTodo = async () => {
+    setIsLoading(true);
+    try {
+      await appsScript.deleteAllData();
+      setEmployees([]);
+      setAttendance([]);
+      showToast('Sistema purgado: Todos los datos han sido eliminados.', 'success');
+      return { success: true };
+    } catch (error) {
+      console.error('Error al vaciar la base de datos:', error);
+      showToast('Error al vaciar la base de datos', 'error');
       return { success: false };
     } finally {
       setIsLoading(false);
@@ -460,6 +502,7 @@ const AppProvider = ({ children }) => {
     agregarEmpleado,
     actualizarEmpleado,
     eliminarEmpleado,
+    eliminarTodo,
     regenerarQR,
     registrarJustificacion,
     actualizarConfiguracion,
