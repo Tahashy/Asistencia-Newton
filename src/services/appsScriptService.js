@@ -5,16 +5,20 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz9ed1f1revMdbm34zEC
 // Función helper para hacer requests
 const makeRequest = async (action, data = null) => {
   try {
-    let url = `${SCRIPT_URL}?action=${action}`;
+    // Configuramos el cuerpo de la petición con la acción y los datos
+    const payload = JSON.stringify({
+      action: action,
+      data: data
+    });
 
-    if (data) {
-      // Enviar data como parámetro en la URL para evitar CORS
-      url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow'
+    const response = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      redirect: 'follow', // Crucial para redirecciones internas de Apps Script
+      headers: {
+        // Usamos text/plain para evadir el chequeo previo CORS estricto de Google
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: payload
     });
 
     const result = await response.json();
@@ -51,6 +55,11 @@ export const updateEmployee = async (employeeId, data) => {
 
 export const deleteEmployee = async (employeeId) => {
   const result = await makeRequest('deleteEmployee', { id: employeeId });
+  return result;
+};
+
+export const deleteAllData = async () => {
+  const result = await makeRequest('deleteAllData');
   return result;
 };
 
