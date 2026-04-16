@@ -6,53 +6,78 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
     const [error, setError] = useState('');
     const [isStopping, setIsStopping] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
-    const [facingMode, setFacingMode] = useState('environment'); // 'environment' o 'user'
+    const [facingMode, setFacingMode] = useState('environment');
     const html5QrCodeRef = useRef(null);
     const mountedRef = useRef(true);
+    const scannerStateRef = useRef('IDLE'); // IDLE, STARTING, SCANNING, STOPPING
+
+    const stopScanner = async (result = null) => {
+        if (!html5QrCodeRef.current || scannerStateRef.current === 'STOPPING' || scannerStateRef.current === 'IDLE') {
+            if (result && mountedRef.current) onScanSuccess(result);
+            return;
+        }
+
+        scannerStateRef.current = 'STOPPING';
+        if (mountedRef.current) setIsStopping(true);
+
+        try {
+            const currentState = html5QrCodeRef.current.getState();
+            if (currentState === 2 || currentState === 3) { // SCANNING o SHADED (según tipos de html5-qrcode)
+                await html5QrCodeRef.current.stop();
+            }
+            
+            // Solo limpiar si aún tenemos la referencia y el elemento existe
+            if (html5QrCodeRef.current && document.getElementById("qr-reader")) {
+                await html5QrCodeRef.current.clear();
+            }
+            
+            html5QrCodeRef.current = null;
+            scannerStateRef.current = 'IDLE';
+            
+            if (mountedRef.current) {
+                setIsScanning(false);
+                if (result) onScanSuccess(result);
+            }
+        } catch (err) {
+            console.warn('Advertencia al detener el escáner:', err.message || err);
+            // Si el error es "Cannot clear while scan is ongoing", es una race condition que ignoramos
+            // ya que el cleanup final se encargará.
+            scannerStateRef.current = 'IDLE';
+        } finally {
+            if (mountedRef.current) setIsStopping(true); // Mantener en true durante el cierre final
+        }
+    };
 
     const startScanner = async (mode = facingMode) => {
+        if (scannerStateRef.current !== 'IDLE') return;
+        
         try {
             setError('');
-            setIsScanning(false);
-            
-            // Verificar si ya existe una instancia
-            if (html5QrCodeRef.current) {
-                const state = html5QrCodeRef.current.getState();
-                if (state === Html5Qrcode.STATE_SCANNING) {
-                    await html5QrCodeRef.current.stop();
-                }
-                html5QrCodeRef.current.clear();
-                html5QrCodeRef.current = null;
-            }
+            scannerStateRef.current = 'STARTING';
+            if (mountedRef.current) setIsScanning(false);
 
             const element = document.getElementById("qr-reader");
-            if (!element) {
-                setError('No se pudo inicializar el lector QR');
-                return;
-            }
+            if (!element) throw new Error('Elemento qr-reader no encontrado');
 
-            // Solicitar permisos de cámara y LIBERAR inmediatamente
-            // Esto es crucial en móviles para evitar el error "Cámara en uso"
+            // 1. Permiso y liberación rápida (Fix móvil)
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                stream.getTracks().forEach(track => track.stop()); // Detener inmediatamente el stream de permiso
-            } catch (permError) {
-                console.error('Error de permisos:', permError);
-                setError('Se requieren permisos de cámara. Por favor, permite el acceso a la cámara en tu navegador.');
-                return;
+                stream.getTracks().forEach(track => track.stop());
+            } catch (pErr) {
+                throw new Error('NOT_ALLOWED');
             }
 
-            // Crear instancia del escáner
-            html5QrCodeRef.current = new Html5Qrcode("qr-reader");
-            
-            const width = window.innerWidth;
-            const qrBoxSize = width < 640 ? 200 : 250;
+            if (!mountedRef.current) return;
 
+            // 2. Inicialización
+            html5QrCodeRef.current = new Html5Qrcode("qr-reader", { verbose: false });
+            
+            const qrBoxSize = window.innerWidth < 640 ? 200 : 250;
             const config = {
-                fps: 15, // Aumentar un poco los FPS para mejor detección en móviles
+                fps: 15,
                 qrbox: { width: qrBoxSize, height: qrBoxSize },
                 aspectRatio: 1.0,
-                disableFlip: mode === 'user' ? false : true,
+                showZoomSliderIfSupported: false,
                 videoConstraints: {
                     facingMode: mode,
                     width: { ideal: 1280 },
@@ -64,189 +89,161 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                 { facingMode: mode },
                 config,
                 (decodedText) => {
-                    console.log('QR detectado:', decodedText);
-                    if (mountedRef.current && !isStopping) {
+                    if (mountedRef.current && scannerStateRef.current === 'SCANNING') {
                         stopScanner(decodedText);
                     }
                 },
-                (errorMessage) => {
-                    // Ignorar errores de escaneo constante
-                }
+                () => {} // Ignorar advertencias de escaneo fallido
             );
 
             if (mountedRef.current) {
+                scannerStateRef.current = 'SCANNING';
                 setIsScanning(true);
+            } else {
+                // Si se desmontó durante el start, nos aseguramos de limpiar
+                await stopScanner();
             }
 
         } catch (err) {
             console.error('Error al iniciar el escáner:', err);
-            let errorMsg = 'No se pudo acceder a la cámara.';
+            scannerStateRef.current = 'IDLE';
             
-            if (err.name === 'NotAllowedError') {
-                errorMsg = 'Permiso denegado. Activa la cámara en la configuración.';
-            } else if (err.name === 'NotFoundError') {
-                errorMsg = 'No se encontró cámara disponible.';
-            } else if (err.name === 'NotReadableError') {
-                errorMsg = 'La cámara está bloqueada por otra aplicación o pestaña abierta.';
-            } else if (err.includes && err.includes('Stream startup timeout')) {
-                errorMsg = 'Tiempo de espera agotado. Intenta recargar la página.';
-            }
+            let msg = 'No se pudo acceder a la cámara.';
+            if (err.message === 'NOT_ALLOWED') msg = 'Se requiere permiso de cámara para escanear.';
+            else if (err.name === 'NotReadableError') msg = 'La cámara ya está siendo usada por otra aplicación.';
             
-            if (mountedRef.current) setError(errorMsg);
-        }
-    };
-
-    const stopScanner = async (result = null) => {
-        if (!html5QrCodeRef.current) return;
-        
-        setIsStopping(true);
-        try {
-            const state = html5QrCodeRef.current.getState();
-            if (state === Html5Qrcode.STATE_SCANNING) {
-                await html5QrCodeRef.current.stop();
-            }
-            html5QrCodeRef.current.clear();
-            html5QrCodeRef.current = null;
-            
-            if (mountedRef.current) setIsScanning(false);
-            
-            if (result && mountedRef.current) {
-                onScanSuccess(result);
-            }
-        } catch (err) {
-            console.error('Error al detener el escáner:', err);
-        } finally {
-            if (mountedRef.current) setIsStopping(false);
+            if (mountedRef.current) setError(msg);
         }
     };
 
     const toggleCamera = async () => {
+        if (scannerStateRef.current !== 'SCANNING') return;
+        
         const newMode = facingMode === 'environment' ? 'user' : 'environment';
         setFacingMode(newMode);
+        
         await stopScanner();
+        // Esperar un poco a que el hardware de la cámara se libere
         setTimeout(() => {
             if (mountedRef.current) startScanner(newMode);
-        }, 300);
+        }, 500);
     };
 
     useEffect(() => {
         mountedRef.current = true;
-        const timer = setTimeout(() => {
+        const initTimer = setTimeout(() => {
             if (mountedRef.current) startScanner();
-        }, 100);
+        }, 200);
 
         return () => {
             mountedRef.current = false;
-            clearTimeout(timer);
-            if (html5QrCodeRef.current) stopScanner();
+            clearTimeout(initTimer);
+            
+            // Intentar detener el escáner de forma segura al desmontar
+            if (html5QrCodeRef.current) {
+                const scanner = html5QrCodeRef.current;
+                const state = scanner.getState();
+                if (state === 2 || state === 3) {
+                    scanner.stop()
+                        .then(() => scanner.clear())
+                        .catch(e => console.log('Cleanup silent exit:', e.message));
+                }
+            }
         };
     }, []);
 
     const handleClose = async () => {
+        if (isStopping) return;
         await stopScanner();
         if (mountedRef.current) onClose();
     };
 
     return (
-        <div className="fixed inset-0 bg-black/95 z-[70] flex items-center justify-center sm:p-4">
+        <div className="fixed inset-0 bg-black/95 z-[70] flex items-center justify-center sm:p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-none sm:rounded-2xl shadow-2xl w-full h-full sm:h-auto sm:max-w-md overflow-hidden flex flex-col">
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-4 sm:p-6 border-b bg-white">
                     <div className="flex items-center gap-3">
-                        <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
-                        <h2 className="text-lg sm:text-xl font-bold">Escanear QR</h2>
+                        <div className="p-2 bg-blue-50 rounded-lg">
+                            <Camera className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <h2 className="text-lg sm:text-xl font-bold text-gray-800">Escanear QR</h2>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={toggleCamera}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors border border-gray-100"
+                            className={`p-2 hover:bg-gray-100 rounded-lg transition-all border border-gray-100 ${isScanning ? 'opacity-100' : 'opacity-50 cursor-not-allowed'}`}
                             title="Cambiar cámara"
-                            disabled={isStopping}
+                            disabled={!isScanning || isStopping}
                         >
-                            <RefreshCw className="w-5 h-5 text-blue-600" />
+                            <RefreshCw className={`w-5 h-5 text-blue-600 ${isStopping ? 'animate-spin' : ''}`} />
                         </button>
                         <button
                             onClick={handleClose}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                            disabled={isStopping}
+                            className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors text-gray-500"
                         >
-                            <X className="w-6 h-6 text-gray-500" />
+                            <X className="w-6 h-6" />
                         </button>
                     </div>
                 </div>
 
                 {/* Scanner Body */}
-                <div className="flex-1 flex flex-col p-4 sm:p-6 justify-center">
+                <div className="flex-1 flex flex-col p-4 sm:p-6 justify-center bg-gray-50/30">
                     {error ? (
-                        <div className="space-y-4">
-                            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-4 rounded-lg text-sm">
-                                <div className="flex items-start gap-3">
-                                    <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                        <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+                            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-5 rounded-2xl">
+                                <div className="flex items-start gap-4">
+                                    <AlertCircle className="w-6 h-6 mt-0.5 flex-shrink-0" />
                                     <div>
-                                        <p className="font-semibold mb-1">Error de cámara</p>
-                                        <p>{error}</p>
+                                        <p className="font-bold mb-1">Error de cámara</p>
+                                        <p className="text-sm opacity-90">{error}</p>
                                     </div>
                                 </div>
                             </div>
                             
-                            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-xs">
-                                <p className="font-semibold mb-2">💡 Consejos para solucionar:</p>
-                                <ul className="list-disc list-inside space-y-1">
-                                    <li>Cierra otras pestañas o aplicaciones que estén usando la cámara.</li>
-                                    <li>Asegúrate de haber aceptado el permiso de cámara.</li>
-                                    <li>Prueba cambiando de cámara con el botón de arriba 🔄.</li>
-                                    <li>Recarga la aplicación.</li>
-                                </ul>
-                            </div>
-
                             <button
                                 onClick={() => startScanner()}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-all"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 transition-all transform active:scale-[0.98]"
                             >
-                                Reintentar
+                                Reintentar conexión
                             </button>
                         </div>
                     ) : (
-                        <>
+                        <div className="relative group">
                             <div
                                 id="qr-reader"
-                                className="rounded-xl overflow-hidden bg-black aspect-square w-full mx-auto max-w-[320px] shadow-lg border-4 border-blue-100 relative"
+                                className="rounded-3xl overflow-hidden bg-black aspect-square w-full mx-auto max-w-[320px] shadow-2xl border-[6px] border-white relative ring-4 ring-blue-50"
                             >
-                                {/* Overlay informativo */}
-                                {!isScanning && !error && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                        <RefreshCw className="w-8 h-8 text-white animate-spin" />
+                                {!isScanning && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm transition-all">
+                                        <RefreshCw className="w-10 h-10 text-blue-400 animate-spin mb-4" />
+                                        <span className="text-white font-medium text-sm">Configurando cámara...</span>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="mt-6 text-center">
-                                {isScanning ? (
-                                    <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-xs sm:text-sm font-medium border border-blue-100">
-                                        <CheckCircle className="w-4 h-4 animate-pulse" />
-                                        <span>Buscando código QR ({facingMode === 'environment' ? 'Trasera' : 'Frontal'})...</span>
+                            {isScanning && (
+                                <div className="mt-8 text-center animate-in fade-in zoom-in duration-500">
+                                    <div className="inline-flex items-center gap-3 bg-white shadow-sm text-blue-700 px-5 py-2.5 rounded-full text-sm font-bold border border-blue-100">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
+                                        <span>Sistema Activo ({facingMode === 'environment' ? 'Trasera' : 'Frontal'})</span>
                                     </div>
-                                ) : (
-                                    <div className="inline-flex items-center gap-2 bg-gray-100 text-gray-600 px-4 py-2 rounded-full text-xs sm:text-sm font-medium">
-                                        <span>Conectando cámara...</span>
-                                    </div>
-                                )}
-                                <p className="text-gray-500 text-[10px] sm:text-xs mt-2 uppercase tracking-widest font-bold">
-                                    Apunta al código QR del carnet
-                                </p>
-                            </div>
-                        </>
+                                    <p className="text-gray-400 text-xs mt-4 uppercase tracking-[0.2em] font-black">
+                                        Encuadra el código QR
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 sm:p-6 border-t bg-gray-50">
+                <div className="p-4 sm:p-6 border-t bg-white">
                     <button
                         onClick={handleClose}
-                        disabled={isStopping}
-                        className="w-full bg-white hover:bg-gray-100 text-gray-700 py-3 rounded-xl font-bold border border-gray-200 transition-all disabled:opacity-50 text-sm"
+                        className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-4 rounded-2xl font-bold transition-all transform active:scale-[0.98] text-sm tracking-wide"
                     >
-                        {isStopping ? 'Cerrando...' : 'CANCELAR'}
+                        CANCELAR OPERACIÓN
                     </button>
                 </div>
             </div>
