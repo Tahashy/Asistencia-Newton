@@ -1,22 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Camera, X, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
 export const QRScanner = ({ onScanSuccess, onClose }) => {
     const [error, setError] = useState('');
     const [isStopping, setIsStopping] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    const [facingMode, setFacingMode] = useState('environment'); // 'environment' o 'user'
     const html5QrCodeRef = useRef(null);
     const mountedRef = useRef(true);
 
-    const startScanner = async () => {
+    const startScanner = async (mode = facingMode) => {
         try {
             setError('');
+            setIsScanning(false);
             
             // Verificar si ya existe una instancia
             if (html5QrCodeRef.current) {
-                console.log('Ya existe una instancia del escáner');
-                return;
+                const state = html5QrCodeRef.current.getState();
+                if (state === Html5Qrcode.STATE_SCANNING) {
+                    await html5QrCodeRef.current.stop();
+                }
+                html5QrCodeRef.current.clear();
+                html5QrCodeRef.current = null;
             }
 
             const element = document.getElementById("qr-reader");
@@ -25,9 +31,11 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                 return;
             }
 
-            // Solicitar permisos de cámara primero
+            // Solicitar permisos de cámara y LIBERAR inmediatamente
+            // Esto es crucial en móviles para evitar el error "Cámara en uso"
             try {
-                await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream.getTracks().forEach(track => track.stop()); // Detener inmediatamente el stream de permiso
             } catch (permError) {
                 console.error('Error de permisos:', permError);
                 setError('Se requieren permisos de cámara. Por favor, permite el acceso a la cámara en tu navegador.');
@@ -37,60 +45,54 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
             // Crear instancia del escáner
             html5QrCodeRef.current = new Html5Qrcode("qr-reader");
             
-            // Determinar tamaño óptimo del cuadro de escaneo (responsive)
             const width = window.innerWidth;
             const qrBoxSize = width < 640 ? 200 : 250;
 
-            // Configuración mejorada para la cámara
             const config = {
-                fps: 10,
+                fps: 15, // Aumentar un poco los FPS para mejor detección en móviles
                 qrbox: { width: qrBoxSize, height: qrBoxSize },
                 aspectRatio: 1.0,
-                disableFlip: false,
+                disableFlip: mode === 'user' ? false : true,
                 videoConstraints: {
-                    facingMode: { ideal: "environment" },
+                    facingMode: mode,
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                 }
             };
 
             await html5QrCodeRef.current.start(
-                { facingMode: "environment" },
+                { facingMode: mode },
                 config,
-                (decodedText, decodedResult) => {
+                (decodedText) => {
                     console.log('QR detectado:', decodedText);
                     if (mountedRef.current && !isStopping) {
                         stopScanner(decodedText);
                     }
                 },
                 (errorMessage) => {
-                    // Ignorar errores de búsqueda constantes
-                    // Solo loguear en consola para debugging
-                    // console.log('Buscando QR...', errorMessage);
+                    // Ignorar errores de escaneo constante
                 }
             );
 
-            setIsScanning(true);
-            console.log('Escáner iniciado correctamente');
+            if (mountedRef.current) {
+                setIsScanning(true);
+            }
 
         } catch (err) {
             console.error('Error al iniciar el escáner:', err);
-            
             let errorMsg = 'No se pudo acceder a la cámara.';
             
             if (err.name === 'NotAllowedError') {
-                errorMsg = 'Permiso de cámara denegado. Por favor, permite el acceso a la cámara en la configuración de tu navegador.';
+                errorMsg = 'Permiso denegado. Activa la cámara en la configuración.';
             } else if (err.name === 'NotFoundError') {
-                errorMsg = 'No se encontró ninguna cámara en tu dispositivo.';
+                errorMsg = 'No se encontró cámara disponible.';
             } else if (err.name === 'NotReadableError') {
-                errorMsg = 'La cámara está siendo utilizada por otra aplicación. Por favor, cierra otras aplicaciones que puedan estar usando la cámara.';
-            } else if (err.name === 'OverconstrainedError') {
-                errorMsg = 'No se pudo iniciar la cámara con la configuración solicitada.';
-            } else if (err.name === 'SecurityError') {
-                errorMsg = 'Error de seguridad. Asegúrate de estar usando HTTPS o localhost.';
+                errorMsg = 'La cámara está bloqueada por otra aplicación o pestaña abierta.';
+            } else if (err.includes && err.includes('Stream startup timeout')) {
+                errorMsg = 'Tiempo de espera agotado. Intenta recargar la página.';
             }
             
-            setError(errorMsg);
+            if (mountedRef.current) setError(errorMsg);
         }
     };
 
@@ -98,18 +100,15 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
         if (!html5QrCodeRef.current) return;
         
         setIsStopping(true);
-        
         try {
             const state = html5QrCodeRef.current.getState();
-            
             if (state === Html5Qrcode.STATE_SCANNING) {
                 await html5QrCodeRef.current.stop();
             }
-            
             html5QrCodeRef.current.clear();
             html5QrCodeRef.current = null;
             
-            setIsScanning(false);
+            if (mountedRef.current) setIsScanning(false);
             
             if (result && mountedRef.current) {
                 onScanSuccess(result);
@@ -117,40 +116,35 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
         } catch (err) {
             console.error('Error al detener el escáner:', err);
         } finally {
-            setIsStopping(false);
+            if (mountedRef.current) setIsStopping(false);
         }
+    };
+
+    const toggleCamera = async () => {
+        const newMode = facingMode === 'environment' ? 'user' : 'environment';
+        setFacingMode(newMode);
+        await stopScanner();
+        setTimeout(() => {
+            if (mountedRef.current) startScanner(newMode);
+        }, 300);
     };
 
     useEffect(() => {
         mountedRef.current = true;
-        
-        // Pequeño delay para asegurar que el DOM esté listo
         const timer = setTimeout(() => {
-            if (mountedRef.current) {
-                startScanner();
-            }
+            if (mountedRef.current) startScanner();
         }, 100);
 
         return () => {
             mountedRef.current = false;
             clearTimeout(timer);
-            
-            if (html5QrCodeRef.current) {
-                stopScanner();
-            }
+            if (html5QrCodeRef.current) stopScanner();
         };
     }, []);
 
     const handleClose = async () => {
         await stopScanner();
-        if (mountedRef.current) {
-            onClose();
-        }
-    };
-
-    const handleRetry = () => {
-        setError('');
-        startScanner();
+        if (mountedRef.current) onClose();
     };
 
     return (
@@ -162,13 +156,23 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                         <Camera className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
                         <h2 className="text-lg sm:text-xl font-bold">Escanear QR</h2>
                     </div>
-                    <button
-                        onClick={handleClose}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        disabled={isStopping}
-                    >
-                        <X className="w-6 h-6 text-gray-500" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleCamera}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors border border-gray-100"
+                            title="Cambiar cámara"
+                            disabled={isStopping}
+                        >
+                            <RefreshCw className="w-5 h-5 text-blue-600" />
+                        </button>
+                        <button
+                            onClick={handleClose}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            disabled={isStopping}
+                        >
+                            <X className="w-6 h-6 text-gray-500" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Scanner Body */}
@@ -188,15 +192,15 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-xs">
                                 <p className="font-semibold mb-2">💡 Consejos para solucionar:</p>
                                 <ul className="list-disc list-inside space-y-1">
-                                    <li>Asegúrate de permitir el acceso a la cámara cuando el navegador lo solicite</li>
-                                    <li>Verifica que ninguna otra aplicación esté usando la cámara</li>
-                                    <li>Si estás en un iPhone/iPad, usa Safari (otros navegadores pueden tener restricciones)</li>
-                                    <li>Intenta recargar la página</li>
+                                    <li>Cierra otras pestañas o aplicaciones que estén usando la cámara.</li>
+                                    <li>Asegúrate de haber aceptado el permiso de cámara.</li>
+                                    <li>Prueba cambiando de cámara con el botón de arriba 🔄.</li>
+                                    <li>Recarga la aplicación.</li>
                                 </ul>
                             </div>
 
                             <button
-                                onClick={handleRetry}
+                                onClick={() => startScanner()}
                                 className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-all"
                             >
                                 Reintentar
@@ -206,18 +210,25 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                         <>
                             <div
                                 id="qr-reader"
-                                className="rounded-xl overflow-hidden bg-black aspect-square w-full mx-auto max-w-[320px] shadow-lg border-4 border-blue-100"
-                            ></div>
+                                className="rounded-xl overflow-hidden bg-black aspect-square w-full mx-auto max-w-[320px] shadow-lg border-4 border-blue-100 relative"
+                            >
+                                {/* Overlay informativo */}
+                                {!isScanning && !error && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                        <RefreshCw className="w-8 h-8 text-white animate-spin" />
+                                    </div>
+                                )}
+                            </div>
 
                             <div className="mt-6 text-center">
                                 {isScanning ? (
                                     <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-xs sm:text-sm font-medium border border-blue-100">
                                         <CheckCircle className="w-4 h-4 animate-pulse" />
-                                        <span>Buscando código QR...</span>
+                                        <span>Buscando código QR ({facingMode === 'environment' ? 'Trasera' : 'Frontal'})...</span>
                                     </div>
                                 ) : (
                                     <div className="inline-flex items-center gap-2 bg-gray-100 text-gray-600 px-4 py-2 rounded-full text-xs sm:text-sm font-medium">
-                                        <span>Iniciando cámara...</span>
+                                        <span>Conectando cámara...</span>
                                     </div>
                                 )}
                                 <p className="text-gray-500 text-[10px] sm:text-xs mt-2 uppercase tracking-widest font-bold">
