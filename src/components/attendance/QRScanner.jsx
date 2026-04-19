@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Camera, X, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 
-export const QRScanner = ({ onScanSuccess, onClose }) => {
+export const QRScanner = ({ onScanSuccess, onClose, isMultiScan = false }) => {
     const [error, setError] = useState('');
     const [isStopping, setIsStopping] = useState(false);
     const [isScanning, setIsScanning] = useState(false);
+    const [cooldown, setCooldown] = useState(false); // Estado para evitar escaneos múltiples seguidos
+    const [lastScan, setLastScan] = useState(null);
     const [facingMode, setFacingMode] = useState('environment');
     const html5QrCodeRef = useRef(null);
     const mountedRef = useRef(true);
@@ -86,7 +88,25 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
                 config,
                 (decodedText) => {
                     if (mountedRef.current && scannerStateRef.current === 'SCANNING') {
-                        stopScanner(decodedText);
+                        if (cooldown) return; // Ignorar si estamos en enfriamiento
+
+                        if (isMultiScan) {
+                            // Modo continuo: No detenemos la cámara, solo notificamos
+                            setCooldown(true);
+                            setLastScan(decodedText);
+                            onScanSuccess(decodedText);
+                            
+                            // 2 segundos de pausa antes del siguiente escaneo
+                            setTimeout(() => {
+                                if (mountedRef.current) {
+                                    setCooldown(false);
+                                    setLastScan(null);
+                                }
+                            }, 2000);
+                        } else {
+                            // Modo normal: Detenemos todo
+                            stopScanner(decodedText);
+                        }
                     }
                 },
                 () => {}
@@ -203,12 +223,19 @@ export const QRScanner = ({ onScanSuccess, onClose }) => {
 
                             {isScanning && (
                                 <div className="mt-8 text-center animate-in fade-in zoom-in duration-500">
-                                    <div className="inline-flex items-center gap-3 bg-white shadow-sm text-blue-700 px-5 py-2.5 rounded-full text-sm font-bold border border-blue-100">
-                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
-                                        <span>Sistema Activo ({facingMode === 'environment' ? 'Trasera' : 'Frontal'})</span>
-                                    </div>
+                                    {cooldown ? (
+                                        <div className="inline-flex items-center gap-3 bg-green-500 shadow-lg text-white px-6 py-3 rounded-full text-sm font-bold border-2 border-white animate-bounce">
+                                            <CheckCircle className="w-5 h-5" />
+                                            <span>¡ESCANEADO CON ÉXITO!</span>
+                                        </div>
+                                    ) : (
+                                        <div className="inline-flex items-center gap-3 bg-white shadow-sm text-blue-700 px-5 py-2.5 rounded-full text-sm font-bold border border-blue-100">
+                                            <div className="w-2 h-2 bg-green-500 rounded-full animate-ping" />
+                                            <span>Sistema Activo ({facingMode === 'environment' ? 'Trasera' : 'Frontal'})</span>
+                                        </div>
+                                    )}
                                     <p className="text-gray-400 text-xs mt-4 uppercase tracking-[0.2em] font-black">
-                                        Encuadra el código QR
+                                        {cooldown ? 'Procesando registro...' : 'Encuadra el código QR'}
                                     </p>
                                 </div>
                             )}

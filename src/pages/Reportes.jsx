@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Filter, Download, FileText, Table
+    Filter, Download, FileText, Table, MessageCircle
 } from 'lucide-react';
 import Pagination from '../components/ui/Pagination';
 import * as XLSX from 'xlsx';
@@ -21,13 +21,19 @@ const Reportes = () => {
 
     const formatFecha = (isoString) => {
         if (!isoString) return '-';
+        // Si ya viene en formato YYYY-MM-DD, lo formateamos directamente para evitar desfases de zona horaria
+        if (typeof isoString === 'string' && isoString.includes('-') && isoString.length === 10) {
+            const [year, month, day] = isoString.split('-');
+            return `${day}/${month}/${year}`;
+        }
         try {
             const date = new Date(isoString);
             if (isNaN(date.getTime())) return isoString;
             return date.toLocaleDateString('es-ES', {
                 day: '2-digit',
                 month: '2-digit',
-                year: 'numeric'
+                year: 'numeric',
+                timeZone: 'UTC' // Forzamos UTC para evitar que el navegador reste horas
             });
         } catch (e) {
             return isoString;
@@ -36,7 +42,7 @@ const Reportes = () => {
 
     const formatHora = (isoString) => {
         if (!isoString) return '-';
-        if (typeof isoString === 'string' && isoString.length === 5 && isoString.includes(':')) return isoString;
+        if (typeof isoString === 'string' && isoString.includes(':') && isoString.length <= 8) return isoString;
         try {
             const date = new Date(isoString);
             if (isNaN(date.getTime())) return isoString;
@@ -49,42 +55,183 @@ const Reportes = () => {
             return isoString;
         }
     };
+    const formatFechaLong = (dateString) => {
+        if (!dateString) return '';
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+        } catch (e) { return ''; }
+    };
 
-    const getFilteredData = () => {
-        let filteredRecords = attendance;
+    const handleWhatsAppSend = () => {
+        if (!data || !selectedEmployee) return;
 
-        // Filtrar por Empleado
-        if (selectedEmployee) {
-            filteredRecords = filteredRecords.filter(a => a.employeeId === selectedEmployee);
+        const employee = employees.find(e => e.id === selectedEmployee);
+        if (!employee || !employee.telefono) {
+            alert('No se encontró un número de teléfono para este alumno/personal.');
+            return;
         }
 
-        // Filtrar por Área y Sede (relacionado con el empleado)
+        const mesReporte = dateRange.inicio 
+            ? formatFechaLong(dateRange.inicio) 
+            : new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+        // Generar iconos dinámicamente para evitar errores de codificación del archivo .js
+        const i = {
+            school: String.fromCodePoint(0x1F3EB),
+            hello: String.fromCodePoint(0x1F44B),
+            user: String.fromCodePoint(0x1F464),
+            calendar: String.fromCodePoint(0x1F4C5),
+            chart: String.fromCodePoint(0x1F4CA),
+            check: String.fromCodePoint(0x2705),
+            wait: String.fromCodePoint(0x23F3),
+            error: String.fromCodePoint(0x274C),
+            trend: String.fromCodePoint(0x1F4C8),
+            star: String.fromCodePoint(0x2728)
+        };
+
+        const incidencias = data.records
+            .filter(r => r.estado !== 'Presente')
+            .slice(0, 10);
+
+        let detString = '';
+        if (incidencias.length > 0) {
+            detString = '\n\n*DETALLE DE INCIDENCIAS:*\n' + 
+                incidencias.map(r => {
+                    const icon = r.estado === 'Tardanza' ? i.wait : i.error;
+                    const time = r.estado === 'Tardanza' ? ` (${formatHora(r.horaEntrada)})` : '';
+                    return `${icon} ${formatFecha(r.fecha)}: ${r.estado}${time}`;
+                }).join('\n');
+        } else {
+            detString = `\n\n${i.star} *¡Excelente! Sin faltas ni tardanzas.*`;
+        }
+
+        const ent = (config?.nombreEntidad || 'SISTEMA').toUpperCase();
+        const msg = 
+`*${i.school} ${ent}*
+*REPORTE DE ASISTENCIA*
+
+¡Hola! ${i.hello} Buenos días.
+Resumen detallado de:
+${i.user} *${employee.nombre} ${employee.apellido}*
+${i.calendar} Periodo: *${mesReporte}*
+
+------------------------------------------
+${i.chart} *RESUMEN GENERAL*
+------------------------------------------
+${i.check} *Asistencias:* ${data.presentes}
+${i.wait} *Tardanzas:* ${data.tardanzas}
+${i.error} *Faltas:* ${data.faltas}
+${i.trend} *Cumplimiento:* ${data.porcentaje}%
+${detString}
+
+------------------------------------------
+_Reporte generado automáticamente._`.trim();
+
+        const phone = String(employee.telefono).replace(/\D/g, '');
+        const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+    };
+
+    const getFilteredData = () => {
+        const activeEmployees = employees.filter(e => e.activo);
+        let baseRecords = [...attendance];
+
+        // 1. Filtrar registros existentes por criterios básicos
+        if (selectedEmployee) {
+            baseRecords = baseRecords.filter(a => a.employeeId === selectedEmployee);
+        }
+
         if (selectedArea || selectedSede) {
-            const matchingEmployeeIds = employees
+            const matchingEmployeeIds = activeEmployees
                 .filter(emp =>
                     (!selectedArea || emp.area === selectedArea) &&
                     (!selectedSede || emp.sede === selectedSede)
                 )
                 .map(emp => emp.id);
-
-            filteredRecords = filteredRecords.filter(a => matchingEmployeeIds.includes(a.employeeId));
+            baseRecords = baseRecords.filter(a => matchingEmployeeIds.includes(a.employeeId));
         }
 
-        // Filtrar por Rango de Fechas
-        if (dateRange.inicio) {
-            filteredRecords = filteredRecords.filter(a => a.fecha >= dateRange.inicio);
-        }
-        if (dateRange.fin) {
-            filteredRecords = filteredRecords.filter(a => a.fecha <= dateRange.fin);
+        // 2. Determinar Rango de Fechas
+        const hoy = new Date().toISOString().split('T')[0];
+        const inicio = dateRange.inicio || hoy;
+        const fin = dateRange.fin || hoy;
+
+        // 3. INYECCIÓN DE FALTAS (Solo si hay un filtro de fecha o persona)
+        // Para simplificar, si se filtra por un rango, aseguramos que cada empleado tenga un registro CADA DÍA
+        const enrichedRecords = [...baseRecords];
+        
+        // Si el filtro de fechas está activo, buscamos huecos
+        if (dateRange.inicio && dateRange.fin) {
+            const start = new Date(dateRange.inicio + 'T00:00:00');
+            const end = new Date(dateRange.fin + 'T00:00:00');
+            
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const dayStr = d.toISOString().split('T')[0];
+                
+                // Solo inyectamos faltas para el personal filtrado (o todos si no hay filtro)
+                const empsToCheck = selectedEmployee 
+                    ? activeEmployees.filter(e => e.id === selectedEmployee)
+                    : activeEmployees.filter(e => 
+                        (!selectedArea || e.area === selectedArea) && 
+                        (!selectedSede || e.sede === selectedSede)
+                    );
+
+                empsToCheck.forEach(emp => {
+                    const hasRecord = baseRecords.find(r => r.employeeId === emp.id && r.fecha === dayStr);
+                    if (!hasRecord) {
+                        enrichedRecords.push({
+                            id: `V-FALTA-${emp.id}-${dayStr}`,
+                            employeeId: emp.id,
+                            fecha: dayStr,
+                            horaEntrada: '',
+                            horaSalida: '',
+                            estado: 'Falta',
+                            metodoRegistro: '-',
+                            virtual: true
+                        });
+                    }
+                });
+            }
+        } else if (dateRange.inicio || dateRange.fin) {
+            // Caso de fecha única
+            const targetDate = dateRange.inicio || dateRange.fin;
+            const empsToCheck = selectedEmployee 
+                ? activeEmployees.filter(e => e.id === selectedEmployee)
+                : activeEmployees.filter(e => 
+                    (!selectedArea || e.area === selectedArea) && 
+                    (!selectedSede || e.sede === selectedSede)
+                );
+
+            empsToCheck.forEach(emp => {
+                const hasRecord = baseRecords.find(r => r.employeeId === emp.id && r.fecha === targetDate);
+                if (!hasRecord) {
+                    enrichedRecords.push({
+                        id: `V-FALTA-${emp.id}-${targetDate}`,
+                        employeeId: emp.id,
+                        fecha: targetDate,
+                        horaEntrada: '',
+                        horaSalida: '',
+                        estado: 'Falta',
+                        metodoRegistro: '-',
+                        virtual: true
+                    });
+                }
+            });
         }
 
-        const presentes = filteredRecords.filter(r => r.estado === 'Presente').length;
-        const tardanzas = filteredRecords.filter(r => r.estado === 'Tardanza').length;
-        const faltas = filteredRecords.filter(r => r.estado === 'Falta' || r.estado === 'Falta Justificada').length;
-        const total = filteredRecords.length || 0;
+        // 4. Filtrar por rango final (por seguridad)
+        let finalRecords = enrichedRecords;
+        if (dateRange.inicio) finalRecords = finalRecords.filter(a => a.fecha >= dateRange.inicio);
+        if (dateRange.fin) finalRecords = finalRecords.filter(a => a.fecha <= dateRange.fin);
+
+        const presentes = finalRecords.filter(r => r.estado === 'Presente').length;
+        const tardanzas = finalRecords.filter(r => r.estado === 'Tardanza').length;
+        const faltas = finalRecords.filter(r => r.estado === 'Falta' || r.estado === 'Falta Justificada').length;
+        const total = finalRecords.length || 0;
 
         return {
-            records: filteredRecords.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)),
+            records: finalRecords.sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || a.employeeId.localeCompare(b.employeeId)),
             presentes,
             tardanzas,
             faltas,
@@ -268,7 +415,16 @@ const Reportes = () => {
                     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="flex flex-col sm:flex-row items-center justify-between p-6 border-b border-gray-100 gap-4">
                             <h3 className="text-xl font-bold text-gray-800">Detalle de Registros</h3>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2 justify-center">
+                                {selectedEmployee && (
+                                    <button
+                                        onClick={handleWhatsAppSend}
+                                        className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-all shadow-lg shadow-green-100 text-sm active:scale-95"
+                                    >
+                                        <MessageCircle className="w-4 h-4" />
+                                        Enviar WhatsApp
+                                    </button>
+                                )}
                                 <button
                                     onClick={exportToExcel}
                                     className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold transition-all shadow-lg shadow-green-100 text-sm"

@@ -15,11 +15,13 @@ import Reportes from './pages/Reportes';
 import Personal from './pages/Personal';
 import Justificaciones from './pages/Justificaciones';
 import Configuracion from './pages/Configuracion';
+import Academico from './pages/Academico';
 
 const AppContent = () => {
     const {
         currentUser, loginUser, toast, hideToast, employees, attendance,
-        registrarEntrada, registrarSalida, getCurrentDate, showToast
+        registrarAsistencia, registrarEntrada, registrarSalida, 
+        getCurrentDate, showToast
     } = useApp();
     const [scannerMode, setScannerMode] = useState(false);
 
@@ -44,24 +46,15 @@ const AppContent = () => {
         const hoy = getCurrentDate();
         const registroHoy = attendance.find(a => a.employeeId === employee.id && a.fecha === hoy);
 
-        if (!registroHoy) {
-            // No hay registro → ENTRADA
-            const res = await registrarEntrada(employee.id, 'QR');
-            if (res.success) {
-                showToast(`Entrada registrada para ${employee.nombre} ${employee.apellido}`, 'success');
-            }
-        } else if (!registroHoy.horaSalida) {
-            // Tiene entrada pero no salida → SALIDA
-            const res = await registrarSalida(employee.id);
-            if (res.success) {
-                showToast(`Salida registrada para ${employee.nombre} ${employee.apellido}`, 'success');
-            }
+        if (!registroHoy || !registroHoy.horaSalida || registroHoy.horaSalida === '-') {
+            // El servidor decidirá si es ENTRADA (si no hay fila) o SALIDA (si hay fila sin salida)
+            await registrarAsistencia(employee.id, 'QR');
         } else {
-            // Ya tiene ambos registros
-            showToast(`${employee.nombre} ya completó sus registros de hoy`, 'info');
+            showToast(`${employee.nombre} ya completó su asistencia de hoy`, 'info');
         }
 
-        setScannerMode(false);
+        // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos
+        // setScannerMode(false); 
     };
 
     return (
@@ -75,6 +68,7 @@ const AppContent = () => {
                 <QRScanner
                     onScanSuccess={handleScanSuccess}
                     onClose={() => setScannerMode(false)}
+                    isMultiScan={true}
                 />
             )}
 
@@ -88,6 +82,7 @@ const AppContent = () => {
                         <Route path="/personal" element={<Personal />} />
                         <Route path="/justificaciones" element={<Justificaciones />} />
                         <Route path="/configuracion" element={<Configuracion />} />
+                        <Route path="/academico" element={<Academico />} />
                         <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                 </Layout>

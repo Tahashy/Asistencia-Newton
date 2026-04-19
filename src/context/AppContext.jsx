@@ -11,6 +11,7 @@ const AppProvider = ({ children }) => {
   const [config, setConfig] = useState(null);
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [academicRecords, setAcademicRecords] = useState([]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
@@ -42,6 +43,9 @@ const AppProvider = ({ children }) => {
 
       const attendanceData = await appsScript.getAttendance();
       setAttendance(attendanceData);
+
+      const academicData = await appsScript.getAcademicRecords();
+      setAcademicRecords(academicData);
 
       showToast('Datos cargados correctamente', 'success');
     } catch (error) {
@@ -102,26 +106,10 @@ const AppProvider = ({ children }) => {
     return `${hours}:${minutes}`;
   };
 
-  // Novedad: Obtener el tiempo inmutable de red (WorldTimeAPI)
+  // Simplificación: Eliminamos la dependencia crítica de WorldTimeAPI para ganar velocidad.
+  // El servidor de Google (Lima) asignará la hora final para el libro de Excel.
   const getNetworkTime = async () => {
-    try {
-      // Configuramos 4 segundos de timeout para no bloquear eternamente 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      
-      const response = await fetch('https://worldtimeapi.org/api/timezone/America/Lima', {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      if (!response.ok) throw new Error('Falló la petición al servidor de tiempo');
-      
-      const data = await response.json();
-      return new Date(data.datetime);
-    } catch (error) {
-      console.warn('Alerta: No se pudo verificar la hora global por internet. Usando tiempo local que podría ser impreciso o adulterado.', error);
-      return new Date(); // Fallback si el internet es intermitente o la api falla
-    }
+    return new Date(); // Usamos tiempo local rápido como base
   };
 
   const calcularEstado = (horaEntrada) => {
@@ -139,107 +127,91 @@ const AppProvider = ({ children }) => {
     return 'Tardanza';
   };
 
-  const registrarEntrada = async (employeeId, metodo = 'Manual') => {
+  const [lastProcessedId, setLastProcessedId] = useState({ id: '', time: 0 });
+  const [pendingIds, setPendingIds] = useState(new Set());
+
+  const registrarAsistencia = async (employeeId, metodo = 'Manual') => {
+    // PROTECCIÓN ANTI-DUPLICADOS (Throttling y Bloqueo de Estado)
+    const nowTs = Date.now();
+    
+    if (pendingIds.has(employeeId)) {
+      console.log('Petición ya en curso para:', employeeId);
+      return { success: false, pending: true };
+    }
+
+    if (lastProcessedId.id === employeeId && (nowTs - lastProcessedId.time) < 5000) {
+      console.log('Ignorando petición reciente para:', employeeId);
+      return { success: false, duplicate: true };
+    }
+    
+    setPendingIds(prev => new Set(prev).add(employeeId));
+    setLastProcessedId({ id: employeeId, time: nowTs });
     setIsLoading(true);
     try {
-      // 🚨 PUNTO DE SEGURIDAD: Obtenemos el tiempo real desde Internet 
-      // en vez de usar el reloj de la PC o Smartphone.
-      const realDate = await getNetworkTime();
-      const fecha = getCurrentDate(realDate);
-      const hora = getCurrentTime(realDate);
-
-      const registroExistente = attendance.find(
-        a => a.employeeId === employeeId && a.fecha === fecha
-      );
-
-      if (registroExistente && registroExistente.horaEntrada) {
-        showToast('Ya existe un registro de entrada para hoy', 'warning');
-        return { success: false };
-      }
-
-      const estado = calcularEstado(hora);
-
-      const nuevoRegistro = {
-        id: `ATT-${Date.now()}`,
-        employeeId,
-        fecha,
-        horaEntrada: hora,
-        horaSalida: null,
-        estado,
-        justificacion: null,
+      // Enviamos el payload con doble nombre de campo para máxima compatibilidad
+      const payload = {
+        employeeId: employeeId,
+        ID_Empleado: employeeId, 
         metodoRegistro: metodo,
         registradoPor: currentUser?.nombre || 'Sistema'
       };
 
-      if (registroExistente) {
-        await appsScript.updateAttendance(registroExistente.id, {
-          horaEntrada: hora,
-          horaSalida: registroExistente.horaSalida,
-          estado,
-          justificacion: registroExistente.justificacion
-        });
-
-        setAttendance(attendance.map(a =>
-          a.id === registroExistente.id
-            ? { ...a, horaEntrada: hora, estado, metodoRegistro: metodo }
-            : a
-        ));
-      } else {
-        await appsScript.addAttendance(nuevoRegistro);
-        setAttendance([...attendance, nuevoRegistro]);
+      const response = await appsScript.addAttendance(payload);
+      
+      if (response.success) {
+        // IMPORTANTE: Recargar datos inmediatamente para ver el cambio en la tabla
+        await loadInitialData(); 
+        
+        // El servidor v6.5 devuelve la acción en response.data.action
+        const actionResult = response.data?.action || 'REGISTRO';
+        const msg = actionResult === 'SALIDA' 
+          ? 'Salida registrada correctamente' 
+          : 'Entrada registrada correctamente';
+          
+        showToast(msg, 'success');
+        return { success: true };
       }
-
-      showToast(`Entrada registrada - ${estado}`, estado === 'Tardanza' ? 'warning' : 'success');
-      return { success: true, data: nuevoRegistro };
+      return { success: false };
     } catch (error) {
-      console.error('Error al registrar entrada:', error);
-      showToast('Error al registrar entrada', 'error');
+      console.error('Error al registrar asistencia:', error);
+      showToast(error.message || 'Error al procesar asistencia', 'error');
       return { success: false };
     } finally {
       setIsLoading(false);
+      setPendingIds(prev => {
+        const next = new Set(prev);
+        next.delete(employeeId);
+        return next;
+      });
     }
   };
 
-  const registrarSalida = async (employeeId) => {
+  const registrarEntrada = (id, metodo) => registrarAsistencia(id, metodo || 'QR');
+  const registrarSalida = (id, metodo) => registrarAsistencia(id, metodo || 'QR');
+
+  const registrarJustificacion = async (employeeId, fecha, motivo) => {
     setIsLoading(true);
     try {
-      // 🚨 PUNTO DE SEGURIDAD: Obtenemos la hora real para la salida
-      const realDate = await getNetworkTime();
-      const fecha = getCurrentDate(realDate);
-      const hora = getCurrentTime(realDate);
+      const payload = {
+        employeeId,
+        fecha,
+        justificacion: motivo,
+        registradoPor: currentUser?.nombre || 'Admin'
+      };
 
-      const registroExistente = attendance.find(
-        a => a.employeeId === employeeId && a.fecha === fecha
-      );
-
-      if (!registroExistente || !registroExistente.horaEntrada) {
-        showToast('No hay registro de entrada para hoy', 'error');
-        return { success: false };
+      // Usamos la nueva función del servicio
+      const response = await appsScript.saveJustification(payload);
+      
+      await loadInitialData(); // Recargamos todo para ver el cambio
+      
+      if (response.success) {
+        showToast('Justificación registrada correctamente', 'success');
+        return { success: true };
       }
-
-      if (registroExistente.horaSalida) {
-        showToast('Ya existe un registro de salida para hoy', 'warning');
-        return { success: false };
-      }
-
-      await appsScript.updateAttendance(registroExistente.id, {
-        horaEntrada: registroExistente.horaEntrada,
-        horaSalida: hora,
-        estado: registroExistente.estado,
-        justificacion: registroExistente.justificacion
-      });
-
-      setAttendance(attendance.map(a =>
-        a.id === registroExistente.id
-          ? { ...a, horaSalida: hora }
-          : a
-      ));
-
-      showToast('Salida registrada correctamente', 'success');
-      return { success: true };
+      return { success: false };
     } catch (error) {
-      console.error('Error al registrar salida:', error);
-      showToast('Error al registrar salida', 'error');
+      console.error('Error al registrar justificación:', error);
+      showToast('Error al registrar justificación', 'error');
       return { success: false };
     } finally {
       setIsLoading(false);
@@ -345,41 +317,6 @@ const AppProvider = ({ children }) => {
     }
   };
 
-  const registrarJustificacion = async (employeeId, fecha, motivo) => {
-    setIsLoading(true);
-    try {
-      const registro = attendance.find(
-        a => a.employeeId === employeeId && a.fecha === fecha
-      );
-
-      if (!registro) {
-        showToast('No se encontró registro para justificar', 'error');
-        return { success: false };
-      }
-
-      await appsScript.updateAttendance(registro.id, {
-        horaEntrada: registro.horaEntrada,
-        horaSalida: registro.horaSalida,
-        estado: 'Falta Justificada',
-        justificacion: motivo
-      });
-
-      setAttendance(attendance.map(a =>
-        a.id === registro.id
-          ? { ...a, estado: 'Falta Justificada', justificacion: motivo }
-          : a
-      ));
-
-      showToast('Justificación registrada correctamente', 'success');
-      return { success: true };
-    } catch (error) {
-      console.error('Error al registrar justificación:', error);
-      showToast('Error al registrar justificación', 'error');
-      return { success: false };
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const actualizarConfiguracion = async (newConfig) => {
     setIsLoading(true);
@@ -397,19 +334,61 @@ const AppProvider = ({ children }) => {
     }
   };
 
+  const guardarNota = async (notaData) => {
+    setIsLoading(true);
+    try {
+      const response = await appsScript.saveAcademicRecord(notaData);
+      if (response.success) {
+        // Actualizar estado local usando actualización funcional para evitar condiciones de carrera
+        setAcademicRecords(prevRecords => {
+          const existe = prevRecords.find(r => 
+            String(r.ID_Alumno) === String(notaData.ID_Alumno) && 
+            r.Mes === notaData.Mes
+          );
+
+          if (existe) {
+            return prevRecords.map(r => 
+              (String(r.ID_Alumno) === String(notaData.ID_Alumno) && r.Mes === notaData.Mes)
+              ? { ...r, ...notaData }
+              : r
+            );
+          } else {
+            return [...prevRecords, { ...notaData, ID: 'AC' + Date.now() }];
+          }
+        });
+
+        return { success: true };
+      }
+      return { success: false };
+    } catch (error) {
+      console.error('Error al guardar nota:', error);
+      showToast('Error al guardar la nota', 'error');
+      return { success: false };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getEstadisticasDelDia = () => {
     const hoy = getCurrentDate();
 
-    // Función para normalizar fechas a YYYY-MM-DD
+    // Función para normalizar fechas a YYYY-MM-DD (Evitando desfases de zona horaria)
     const normalizar = (fechaInput) => {
       if (!fechaInput) return '';
+      const str = fechaInput.toString();
+      // Si ya viene como YYYY-MM-DD (ej: desde el Excel formateado), lo usamos directo
+      if (str.includes('-') && str.length === 10) return str.split('T')[0].trim();
+      
       const d = new Date(fechaInput);
-      if (isNaN(d.getTime())) return fechaInput.toString().split('T')[0].trim();
+      if (isNaN(d.getTime())) return str.split('T')[0].trim();
+      
+      // Si es un objeto Date real, usamos los métodos locales para que coincida con el día del usuario
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
 
     const esDiaLaboral = (fechaStr) => {
       const diasLaborales = config?.diasLaborales || [1, 2, 3, 4, 5];
+      // Para obtener el día de la semana sin desfases, añadimos T00:00:00
       const diaNum = new Date(fechaStr + 'T00:00:00').getDay();
       return diasLaborales.includes(diaNum);
     };
@@ -458,8 +437,10 @@ const AppProvider = ({ children }) => {
     // Reutilizar la misma lógica de normalización
     const normalizar = (fechaInput) => {
       if (!fechaInput) return '';
+      const str = fechaInput.toString();
+      if (str.includes('-') && str.length === 10) return str.split('T')[0].trim();
       const d = new Date(fechaInput);
-      if (isNaN(d.getTime())) return fechaInput.toString().split('T')[0].trim();
+      if (isNaN(d.getTime())) return str.split('T')[0].trim();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
 
@@ -493,8 +474,10 @@ const AppProvider = ({ children }) => {
     logoutUser,
     employees,
     attendance,
+    academicRecords,
     config,
     isLoading,
+    registrarAsistencia,
     registrarEntrada,
     registrarSalida,
     getEstadisticasDelDia,
@@ -506,6 +489,7 @@ const AppProvider = ({ children }) => {
     regenerarQR,
     registrarJustificacion,
     actualizarConfiguracion,
+    guardarNota,
     getCurrentDate,
     getCurrentTime,
     toast,

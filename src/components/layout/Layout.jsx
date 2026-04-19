@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import {
   Home, UserCheck, BarChart3, Users, FileText, Settings,
-  X, Menu, CheckSquare, LogOut
+  X, Menu, CheckSquare, LogOut, BookOpen
 } from 'lucide-react';
 
 const Layout = ({ children }) => {
@@ -14,6 +14,7 @@ const Layout = ({ children }) => {
     { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: Home, roles: ['admin', 'supervisor'] },
     { id: 'registro', path: '/registro', label: 'Registrar Asistencia', icon: UserCheck, roles: ['admin', 'supervisor'] },
     { id: 'reportes', path: '/reportes', label: 'Reportes', icon: BarChart3, roles: ['admin', 'supervisor'] },
+    { id: 'academico', path: '/academico', label: 'Rendimiento Académico', icon: BookOpen, roles: ['admin', 'supervisor'] },
     { id: 'personal', path: '/personal', label: 'Gestión Personal', icon: Users, roles: ['admin'] },
     { id: 'justificaciones', path: '/justificaciones', label: 'Justificaciones', icon: FileText, roles: ['admin', 'supervisor'] },
     { id: 'configuracion', path: '/configuracion', label: 'Configuración', icon: Settings, roles: ['admin'] }
@@ -33,7 +34,22 @@ const Layout = ({ children }) => {
         </div>
       </div>
 
-      <aside className={`fixed top-0 left-0 h-full bg-gradient-to-b from-blue-600 to-blue-800 text-white w-64 z-50 transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full overflow-y-auto bg-gradient-to-b from-blue-600 to-blue-800 text-white w-64 z-50 transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} scrollbar-thin`}>
+        <style>{`
+          .scrollbar-thin::-webkit-scrollbar {
+            width: 4px;
+          }
+          .scrollbar-thin::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+          }
+          .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+          }
+          .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+          }
+        `}</style>
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
             <CheckSquare className="w-8 h-8" />
