@@ -35,7 +35,14 @@ const AppProvider = ({ children }) => {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      const configData = await appsScript.getConfig();
+      let configData = await appsScript.getConfig();
+      
+      // Parsear arrays de Google Sheets que vienen como strings
+      if (configData) {
+        try { if (typeof configData.areas === 'string') configData.areas = JSON.parse(configData.areas); } catch (e) {}
+        try { if (typeof configData.sedes === 'string') configData.sedes = JSON.parse(configData.sedes); } catch (e) {}
+        try { if (typeof configData.diasLaborales === 'string') configData.diasLaborales = JSON.parse(configData.diasLaborales); } catch (e) {}
+      }
       setConfig(configData);
 
       const employeesData = await appsScript.getEmployees();
@@ -112,10 +119,22 @@ const AppProvider = ({ children }) => {
     return new Date(); // Usamos tiempo local rápido como base
   };
 
-  const calcularEstado = (horaEntrada) => {
+  const calcularEstado = (horaEntrada, employeeId) => {
     if (!config) return 'Presente';
 
+    const emp = employees.find(e => e.id === employeeId);
+    const turno = emp?.turno || 'Mañana';
+
+    // Si es turno tarde, siempre presente
+    if (turno === 'Tarde') return 'Presente';
+
     const [hourEntrada, minEntrada] = horaEntrada.split(':').map(Number);
+    
+    // Si es doble turno y marca en la tarde (asumimos desde la 1 PM), siempre presente en ese momento
+    if (turno === 'Doble Turno' && hourEntrada >= 13) {
+      return 'Presente';
+    }
+
     const [hourConfig, minConfig] = config.horaEntrada.split(':').map(Number);
     const minutosEntrada = hourEntrada * 60 + minEntrada;
     const minutosConfig = hourConfig * 60 + minConfig;
@@ -148,19 +167,24 @@ const AppProvider = ({ children }) => {
     setLastProcessedId({ id: employeeId, time: nowTs });
     setIsLoading(true);
     try {
+      // Extraer el turno del empleado
+      const emp = employees.find(e => e.id === employeeId);
+      const turno = emp?.turno || 'Mañana';
+
       // Enviamos el payload con doble nombre de campo para máxima compatibilidad
       const payload = {
         employeeId: employeeId,
         ID_Empleado: employeeId, 
         metodoRegistro: metodo,
-        registradoPor: currentUser?.nombre || 'Sistema'
+        registradoPor: currentUser?.nombre || 'Sistema',
+        turno: turno
       };
 
       const response = await appsScript.addAttendance(payload);
       
       if (response.success) {
-        // IMPORTANTE: Recargar datos inmediatamente para ver el cambio en la tabla
-        await loadInitialData(); 
+        // IMPORTANTE: Recargar asistencias en segundo plano sin bloquear la interfaz
+        appsScript.getAttendance().then(setAttendance).catch(console.error);
         
         // El servidor v6.5 devuelve la acción en response.data.action
         const actionResult = response.data?.action || 'REGISTRO';
@@ -202,7 +226,8 @@ const AppProvider = ({ children }) => {
       // Usamos la nueva función del servicio
       const response = await appsScript.saveJustification(payload);
       
-      await loadInitialData(); // Recargamos todo para ver el cambio
+      // Recarga asíncrona silenciosa
+      appsScript.getAttendance().then(setAttendance).catch(console.error);
       
       if (response.success) {
         showToast('Justificación registrada correctamente', 'success');
@@ -222,15 +247,33 @@ const AppProvider = ({ children }) => {
     setIsLoading(true);
     try {
       const nuevoId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
+      
+      let foto_url = null;
+      if (empleadoData.fotoFile) {
+        const uploadResult = await appsScript.uploadProfilePhoto(empleadoData.fotoFile, nuevoId);
+        if (uploadResult.success) {
+          foto_url = uploadResult.url;
+        }
+      }
+
       const nuevoEmpleado = {
         ...empleadoData,
         id: nuevoId,
         qrCode: `${nuevoId}-QR-HASH-${Date.now()}`,
         activo: true,
-        fechaCreacion: getCurrentDate()
+        fechaCreacion: getCurrentDate(),
+        foto_url
       };
+      
+      delete nuevoEmpleado.fotoFile;
 
-      await appsScript.addEmployee(nuevoEmpleado);
+      const result = await appsScript.addEmployee(nuevoEmpleado);
+      
+      if (!result.success) {
+        showToast(result.error || 'Error al guardar en base de datos', 'error');
+        return { success: false };
+      }
+
       setEmployees([...employees, nuevoEmpleado]);
       showToast('Empleado creado correctamente', 'success');
       return { success: true, data: nuevoEmpleado };
@@ -247,9 +290,25 @@ const AppProvider = ({ children }) => {
     setIsLoading(true);
     try {
       const employee = employees.find(e => e.id === id);
-      const updatedEmployee = { ...employee, ...data };
+      let foto_url = data.foto_url || employee.foto_url;
+      
+      if (data.fotoFile) {
+        const uploadResult = await appsScript.uploadProfilePhoto(data.fotoFile, id);
+        if (uploadResult.success) {
+          foto_url = uploadResult.url;
+        }
+      }
 
-      await appsScript.updateEmployee(id, updatedEmployee);
+      const updatedEmployee = { ...employee, ...data, foto_url };
+      delete updatedEmployee.fotoFile;
+
+      const result = await appsScript.updateEmployee(id, updatedEmployee);
+      
+      if (!result.success) {
+        showToast(result.error || 'Error al actualizar en base de datos', 'error');
+        return { success: false };
+      }
+
       setEmployees(employees.map(e => e.id === id ? updatedEmployee : e));
       showToast('Empleado actualizado correctamente', 'success');
       return { success: true };
@@ -321,7 +380,11 @@ const AppProvider = ({ children }) => {
   const actualizarConfiguracion = async (newConfig) => {
     setIsLoading(true);
     try {
-      await appsScript.updateConfig(newConfig);
+      // Como ahora usamos Supabase (BD Relacional real), ya no necesitamos 
+      // convertir los arrays a string como hacíamos con Google Sheets.
+      const configToSave = { ...newConfig };
+
+      await appsScript.updateConfig(configToSave);
       setConfig(newConfig);
       showToast('Configuración actualizada correctamente', 'success');
       return { success: true };
@@ -399,9 +462,30 @@ const AppProvider = ({ children }) => {
     const presentes = registrosHoy.filter(a => a.estado?.toLowerCase() === 'presente').length;
     const tardanzas = registrosHoy.filter(a => a.estado?.toLowerCase() === 'tardanza').length;
 
-    // Solo contar ausentes si hoy es un día laboral
+    // Solo contar ausentes si hoy es un día laboral Y ya pasó la hora de inicio del turno del empleado
+    const ahora = new Date();
+    const minutosAhora = ahora.getHours() * 60 + ahora.getMinutes();
+
     const ausentes = hoyEsLaboral
-      ? employees.filter(e => e.activo && !registrosHoy.find(r => r.employeeId === e.id)).length
+      ? employees.filter(e => {
+          if (!e.activo) return false;
+          // Si ya tiene registro hoy, no es ausente
+          if (registrosHoy.find(r => r.employeeId === e.id)) return false;
+          // Buscar la hora de inicio del turno del empleado en la configuración
+          const turnoConfig = config?.turnos?.find(t => t.nombre === e.turno);
+          if (turnoConfig?.hora_entrada) {
+            const [h, m] = turnoConfig.hora_entrada.split(':').map(Number);
+            const minutosInicioTurno = h * 60 + m;
+            // Solo es ausente si ya pasó la hora de entrada de su turno
+            return minutosAhora >= minutosInicioTurno;
+          }
+          // Si no hay configuración de turno, usar la hora global de config
+          if (config?.horaEntrada) {
+            const [h, m] = config.horaEntrada.split(':').map(Number);
+            return minutosAhora >= h * 60 + m;
+          }
+          return true;
+        }).length
       : 0;
 
     // Distribución por Área para gráfico

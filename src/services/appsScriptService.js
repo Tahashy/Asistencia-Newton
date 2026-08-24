@@ -1,41 +1,14 @@
 // src/services/appsScriptService.js
+// IMPORTANTE: Adaptado para esquema normalizado (Llaves Foráneas)
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx8Y7QVmAaIjoemko7B5fVBkNC3mGvyl1K0tAEHV2dLEvrkw8z2dVtQwuUd5dRdsaON/exec';
+import { supabase } from './supabaseClient';
 
-// Función helper para hacer requests
-const makeRequest = async (action, data = null) => {
-  try {
-    console.log(`[API] Solicitando ${action}...`, data);
-    const payload = JSON.stringify({ action, data });
-
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: payload
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    console.log(`[API] Respuesta de ${action}:`, result);
-
-    if (result.success === false) {
-      throw new Error(result.error || 'Error en la operación');
-    }
-
-    // Si el éxito viene anidado en data (v6.5)
-    if (result.data && result.data.success === false) {
-      throw new Error(result.data.error || 'Error interno en el servidor');
-    }
-
-    return result;
-  } catch (error) {
-    console.error(`[API ERROR] En ${action}:`, error);
-    throw error;
+const handleResponse = (error, data = null) => {
+  if (error) {
+    console.error('[Supabase Error]:', error);
+    return { success: false, error: error.message };
   }
+  return { success: true, data };
 };
 
 // ============================================
@@ -43,28 +16,122 @@ const makeRequest = async (action, data = null) => {
 // ============================================
 
 export const getEmployees = async () => {
-  const result = await makeRequest('getEmployees');
-  return result.data;
+  const { data, error } = await supabase
+    .from('empleados')
+    .select(`
+      *,
+      sedes(nombre),
+      areas(nombre),
+      cargos(nombre),
+      turnos(nombre)
+    `)
+    .order('fecha_creacion', { ascending: true });
+  
+  if (error) {
+    console.error('Error getEmployees:', error);
+    return [];
+  }
+  
+  // Aplanamos las relaciones para la UI
+  return data.map(emp => ({
+    ...emp,
+    qrCode: emp.qr_code,
+    fechaCreacion: emp.fecha_creacion,
+    sede: emp.sedes?.nombre || '',
+    area: emp.areas?.nombre || '',
+    cargo: emp.cargos?.nombre || '',
+    turno: emp.turnos?.nombre || 'Mañana',
+    foto_url: emp.foto_url || null
+  }));
+};
+
+export const uploadProfilePhoto = async (file, employeeId) => {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${employeeId}-${Date.now()}.${fileExt}`;
+  const filePath = `perfiles/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('fotos_perfil')
+    .upload(filePath, file);
+
+  if (uploadError) {
+    return { success: false, error: uploadError.message };
+  }
+
+  const { data } = supabase.storage
+    .from('fotos_perfil')
+    .getPublicUrl(filePath);
+
+  return { success: true, url: data.publicUrl };
+};
+
+// Función auxiliar para obtener ID por nombre (crea si no existe)
+const getOrCreateId = async (table, nombre) => {
+  if (!nombre) return null;
+  const { data } = await supabase.from(table).select('id').eq('nombre', nombre).maybeSingle();
+  if (data) return data.id;
+  
+  const { data: newRow } = await supabase.from(table).insert([{ nombre }]).select('id').single();
+  return newRow?.id || null;
 };
 
 export const addEmployee = async (employee) => {
-  const result = await makeRequest('addEmployee', employee);
-  return result;
+  const sede_id = await getOrCreateId('sedes', employee.sede);
+  const area_id = await getOrCreateId('areas', employee.area);
+  const cargo_id = await getOrCreateId('cargos', employee.cargo);
+  const turno_id = await getOrCreateId('turnos', employee.turno || 'Mañana');
+
+  const dbEmployee = {
+    id: employee.id,
+    nombre: employee.nombre,
+    apellido: employee.apellido,
+    email: employee.email,
+    telefono: employee.telefono,
+    activo: employee.activo,
+    qr_code: employee.qrCode,
+    fecha_creacion: employee.fechaCreacion,
+    foto_url: employee.foto_url,
+    sede_id,
+    area_id,
+    cargo_id,
+    turno_id
+  };
+
+  const { data, error } = await supabase.from('empleados').insert([dbEmployee]);
+  return handleResponse(error, data);
 };
 
 export const updateEmployee = async (employeeId, data) => {
-  const result = await makeRequest('updateEmployee', { id: employeeId, data });
-  return result;
+  const updatePayload = {};
+
+  if (data.nombre !== undefined) updatePayload.nombre = data.nombre;
+  if (data.apellido !== undefined) updatePayload.apellido = data.apellido;
+  if (data.email !== undefined) updatePayload.email = data.email;
+  if (data.telefono !== undefined) updatePayload.telefono = data.telefono;
+  if (data.activo !== undefined) updatePayload.activo = data.activo;
+  if (data.qrCode !== undefined) updatePayload.qr_code = data.qrCode;
+  if (data.fechaCreacion !== undefined) updatePayload.fecha_creacion = data.fechaCreacion;
+  if (data.foto_url !== undefined) updatePayload.foto_url = data.foto_url;
+
+  if (data.sede !== undefined) updatePayload.sede_id = await getOrCreateId('sedes', data.sede);
+  if (data.area !== undefined) updatePayload.area_id = await getOrCreateId('areas', data.area);
+  if (data.cargo !== undefined) updatePayload.cargo_id = await getOrCreateId('cargos', data.cargo);
+  if (data.turno !== undefined) updatePayload.turno_id = await getOrCreateId('turnos', data.turno);
+
+  const { error } = await supabase.from('empleados').update(updatePayload).eq('id', employeeId);
+  return handleResponse(error);
 };
 
 export const deleteEmployee = async (employeeId) => {
-  const result = await makeRequest('deleteEmployee', { id: employeeId });
-  return result;
+  const { error } = await supabase.from('empleados').delete().eq('id', employeeId);
+  return handleResponse(error);
 };
 
 export const deleteAllData = async () => {
-  const result = await makeRequest('deleteAllData');
-  return result;
+  await supabase.from('registros_academicos').delete().neq('id', '');
+  await supabase.from('asistencias').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  const { error } = await supabase.from('empleados').delete().neq('id', '');
+  return handleResponse(error);
 };
 
 // ============================================
@@ -72,23 +139,121 @@ export const deleteAllData = async () => {
 // ============================================
 
 export const getAttendance = async () => {
-  const result = await makeRequest('getAttendance');
-  return result.data;
+  const { data, error } = await supabase
+    .from('asistencias')
+    .select('*')
+    .order('fecha', { ascending: false })
+    .order('hora_entrada', { ascending: false });
+
+  if (error) {
+    console.error('Error getAttendance:', error);
+    return [];
+  }
+
+  return data.map(a => ({
+    ...a,
+    employeeId: a.employee_id,
+    horaEntrada: a.hora_entrada,
+    horaSalida: a.hora_salida,
+    metodoRegistro: a.metodo_registro,
+    registradoPor: a.registrado_por
+  }));
 };
 
-export const addAttendance = async (attendance) => {
-  const result = await makeRequest('addAttendance', attendance);
-  return result;
+export const addAttendance = async (payload) => {
+  const { employeeId, metodoRegistro, registradoPor } = payload;
+  
+  const now = new Date();
+  const fecha = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+
+  const { data: existing } = await supabase
+    .from('asistencias')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('fecha', fecha)
+    .maybeSingle();
+
+  if (existing) {
+    if (!existing.hora_salida) {
+      const { error } = await supabase.from('asistencias').update({ hora_salida: timeStr }).eq('id', existing.id);
+      if (error) return handleResponse(error);
+      return { success: true, data: { action: 'SALIDA' } };
+    } else {
+      return { success: false, error: 'Ya registró entrada y salida hoy' };
+    }
+  } else {
+    // === LÓGICA DE CÁLCULO DE ESTADO ===
+    let estadoAsistencia = 'Presente';
+    
+    // 1. Obtener el turno y horario del empleado
+    const { data: emp } = await supabase.from('empleados').select('turnos(nombre, hora_entrada)').eq('id', employeeId).maybeSingle();
+    const nombreTurno = emp?.turnos?.nombre || '';
+    const horaEntradaTurno = emp?.turnos?.hora_entrada;
+
+    // 2. El Turno Tarde NO tiene tardanza: si marcaron, es Presente
+    const turnoSinTardanza = nombreTurno === 'Tarde';
+
+    if (!turnoSinTardanza && horaEntradaTurno) {
+      // Solo aplicar lógica de tardanza para turnos que NO sean Tarde
+      const { data: conf } = await supabase.from('configuracion').select('tolerancia_minutos').limit(1).maybeSingle();
+      const toleranciaMinutos = conf?.tolerancia_minutos || 15;
+
+      // Hora límite = hora de entrada del turno + tolerancia
+      const entradaEsperadaDate = new Date(`${fecha}T${horaEntradaTurno}`);
+      entradaEsperadaDate.setMinutes(entradaEsperadaDate.getMinutes() + toleranciaMinutos);
+
+      // Hora real en que el usuario está registrando
+      const horaRealDate = new Date(`${fecha}T${timeStr}:00`);
+
+      if (horaRealDate > entradaEsperadaDate) {
+        estadoAsistencia = 'Tardanza';
+      }
+    }
+
+    const newRecord = {
+      employee_id: employeeId,
+      fecha: fecha,
+      hora_entrada: timeStr,
+      metodo_registro: metodoRegistro,
+      registrado_por: registradoPor,
+      estado: estadoAsistencia
+    };
+    
+    const { error } = await supabase.from('asistencias').insert([newRecord]);
+    if (error) return handleResponse(error);
+    return { success: true, data: { action: 'ENTRADA' } };
+  }
 };
 
 export const saveJustification = async (payload) => {
-  const result = await makeRequest('saveJustification', payload);
-  return result;
+  const { employeeId, fecha, justificacion, registradoPor } = payload;
+  
+  const { data: existing } = await supabase
+    .from('asistencias')
+    .select('id')
+    .eq('employee_id', employeeId)
+    .eq('fecha', fecha)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase.from('asistencias').update({ justificacion, estado: 'Justificado' }).eq('id', existing.id);
+    return handleResponse(error);
+  } else {
+    const { error } = await supabase.from('asistencias').insert([{
+      employee_id: employeeId, fecha, justificacion, registrado_por: registradoPor, estado: 'Justificado'
+    }]);
+    return handleResponse(error);
+  }
 };
 
 export const updateAttendance = async (attendanceId, data) => {
-  const result = await makeRequest('updateAttendance', { id: attendanceId, data });
-  return result;
+  const dbData = { ...data };
+  if (dbData.horaEntrada) { dbData.hora_entrada = dbData.horaEntrada; delete dbData.horaEntrada; }
+  if (dbData.horaSalida) { dbData.hora_salida = dbData.horaSalida; delete dbData.horaSalida; }
+
+  const { error } = await supabase.from('asistencias').update(dbData).eq('id', attendanceId);
+  return handleResponse(error);
 };
 
 // ============================================
@@ -96,13 +261,82 @@ export const updateAttendance = async (attendanceId, data) => {
 // ============================================
 
 export const getConfig = async () => {
-  const result = await makeRequest('getConfig');
-  return result.data;
+  const { data: conf, error } = await supabase.from('configuracion').select('*').limit(1).maybeSingle();
+  if (error || !conf) return null;
+  
+  // Sincronizamos las áreas y sedes para la UI leyendo directamente las tablas normalizadas
+  const { data: areasData } = await supabase.from('areas').select('nombre');
+  const { data: sedesData } = await supabase.from('sedes').select('nombre');
+  const { data: turnosData } = await supabase.from('turnos').select('nombre, hora_entrada, hora_salida');
+
+  return {
+    ...conf,
+    nombreEntidad: conf.nombre_entidad,
+    nombreEntidadSingular: conf.nombre_entidad_singular,
+    nombreEntidadPlural: conf.nombre_entidad_plural,
+    toleranciaMinutos: conf.tolerancia_minutos,
+    diasLaborales: typeof conf.dias_laborales === 'string' ? JSON.parse(conf.dias_laborales) : conf.dias_laborales,
+    areas: areasData ? areasData.map(a => a.nombre) : [],
+    sedes: sedesData ? sedesData.map(s => s.nombre) : [],
+    turnos: turnosData || []
+  };
 };
 
 export const updateConfig = async (config) => {
-  const result = await makeRequest('updateConfig', config);
-  return result;
+  const { data: existing } = await supabase.from('configuracion').select('id').limit(1).maybeSingle();
+  
+  const dbConfig = {
+    nombre_entidad: config.nombreEntidad,
+    nombre_entidad_singular: config.nombreEntidadSingular,
+    nombre_entidad_plural: config.nombreEntidadPlural,
+    tolerancia_minutos: config.toleranciaMinutos,
+    dias_laborales: config.diasLaborales,
+  };
+
+  if (existing) {
+    await supabase.from('configuracion').update(dbConfig).eq('id', existing.id);
+  } else {
+    await supabase.from('configuracion').insert([dbConfig]);
+  }
+
+  // Sincronizar Áreas y Sedes (Inserta los nuevos)
+  const areasArray = Array.isArray(config.areas) ? config.areas : (typeof config.areas === 'string' ? JSON.parse(config.areas) : []);
+  if (areasArray.length > 0) {
+    for (const a of areasArray) { await getOrCreateId('areas', a); }
+  }
+
+  const sedesArray = Array.isArray(config.sedes) ? config.sedes : (typeof config.sedes === 'string' ? JSON.parse(config.sedes) : []);
+  if (sedesArray.length > 0) {
+    for (const s of sedesArray) { await getOrCreateId('sedes', s); }
+  }
+
+  // Sincronizar Turnos (Acepta nombre y horarios)
+  if (config.turnos && Array.isArray(config.turnos)) {
+    // Obtener turnos actuales en la BD para detectar cuáles se eliminaron
+    const { data: turnosEnBD } = await supabase.from('turnos').select('id, nombre');
+    const nombresTurnosNuevos = config.turnos.map(t => t.nombre).filter(Boolean);
+
+    // Eliminar los turnos que ya no están en la nueva lista
+    if (turnosEnBD) {
+      const turnosAEliminar = turnosEnBD.filter(t => !nombresTurnosNuevos.includes(t.nombre));
+      for (const t of turnosAEliminar) {
+        await supabase.from('turnos').delete().eq('id', t.id);
+      }
+    }
+
+    // Insertar o actualizar los turnos que sí están en la lista
+    for (const t of config.turnos) {
+      if (!t.nombre) continue;
+      const { data: existingTurno } = await supabase.from('turnos').select('id').eq('nombre', t.nombre).maybeSingle();
+      if (existingTurno) {
+        await supabase.from('turnos').update({ hora_entrada: t.hora_entrada, hora_salida: t.hora_salida }).eq('id', existingTurno.id);
+      } else {
+        await supabase.from('turnos').insert([{ nombre: t.nombre, hora_entrada: t.hora_entrada, hora_salida: t.hora_salida }]);
+      }
+    }
+  }
+
+  return { success: true };
 };
 
 // ============================================
@@ -110,13 +344,39 @@ export const updateConfig = async (config) => {
 // ============================================
 
 export const getAcademicRecords = async () => {
-    const result = await makeRequest('getAcademic');
-    return result.data;
+  const { data, error } = await supabase.from('registros_academicos').select('*');
+  if (error) return [];
+  
+  return data.map(r => ({
+    ...r,
+    ID_Alumno: r.id_alumno,
+    Mes: r.mes,
+    ...r.datos_nota
+  }));
 };
 
 export const saveAcademicRecord = async (data) => {
-    const result = await makeRequest('saveAcademic', data);
-    return result;
+  const { ID_Alumno, Mes, ID, ...datosNota } = data;
+  
+  const { data: existing } = await supabase
+    .from('registros_academicos')
+    .select('id')
+    .eq('id_alumno', ID_Alumno)
+    .eq('mes', Mes)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase.from('registros_academicos').update({ datos_nota: datosNota }).eq('id', existing.id);
+    return handleResponse(error);
+  } else {
+    const { error } = await supabase.from('registros_academicos').insert([{
+      id: ID || ('AC' + Date.now()),
+      id_alumno: ID_Alumno,
+      mes: Mes,
+      datos_nota: datosNota
+    }]);
+    return handleResponse(error);
+  }
 };
 
 // ============================================
@@ -124,6 +384,70 @@ export const saveAcademicRecord = async (data) => {
 // ============================================
 
 export const login = async (email, password) => {
-  const result = await makeRequest('login', { email, password });
-  return result;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return { success: false, error: error.message };
+
+  return { 
+    success: true, 
+    data: {
+      id: data.user.id,
+      email: data.user.email,
+      nombre: data.user.user_metadata?.nombre || 'Administrador',
+      rol: 'admin'
+    } 
+  };
+};
+
+// ============================================
+// MANTENEDOR DE USUARIOS ADMINISTRADORES
+// ============================================
+
+export const getAdminUsers = async () => {
+  const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: false });
+  if (error) {
+    return [];
+  }
+  return data;
+};
+
+export const createAdminUser = async (email, password, nombre) => {
+  try {
+    // 1. Invocar la Edge Function para crear el usuario en Supabase Auth
+    // Nota: Reemplaza tu_id_de_proyecto si es necesario o asegúrate de que supabase.functions funcione
+    const { data, error } = await supabase.functions.invoke('create-admin', {
+      body: { email, password, nombre }
+    });
+    
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const updateAdminUser = async (id, email, password, nombre) => {
+  try {
+    const { data, error } = await supabase.functions.invoke('update-admin', {
+      body: { id, email, password, nombre }
+    });
+    
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const deleteAdminUser = async (id) => {
+  // Nota: Eliminar un usuario de perfiles asume que hay un trigger o se maneja a nivel bd
+  // Para eliminar de Auth se necesitaría otra llamada al Admin API en la Edge Function,
+  // Por simplicidad en este MVP, eliminamos el perfil (le quita el acceso si validas rol).
+  const { error } = await supabase.from('perfiles').delete().eq('id', id);
+  return handleResponse(error);
 };

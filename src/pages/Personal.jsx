@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2
+    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2, Camera
 } from 'lucide-react';
 import QRCode from '../components/ui/QRCode';
 import Pagination from '../components/ui/Pagination';
@@ -27,7 +27,10 @@ const Personal = () => {
         sede: '',
         telefono: '',
         email: '',
-        cargo: ''
+        cargo: '',
+        turno: 'Mañana',
+        fotoFile: null,
+        fotoPreview: null
     });
 
     const handleSubmit = async (e) => {
@@ -84,7 +87,10 @@ const Personal = () => {
             sede: '',
             telefono: '',
             email: '',
-            cargo: ''
+            cargo: '',
+            turno: 'Mañana',
+            fotoFile: null,
+            fotoPreview: null
         });
         setIsEditing(false);
     };
@@ -181,9 +187,13 @@ const Personal = () => {
                                 <tr key={employee.id} className="hover:bg-blue-50/30 transition-colors group">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                                                {employee.nombre[0]}{employee.apellido[0]}
-                                            </div>
+                                            {employee.foto_url ? (
+                                                <img src={employee.foto_url} alt={employee.nombre} className="w-10 h-10 rounded-full object-cover border-2 border-blue-100" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                                                    {employee.nombre?.[0]}{employee.apellido?.[0]}
+                                                </div>
+                                            )}
                                             <div>
                                                 <p className="font-bold text-gray-800">{employee.nombre} {employee.apellido}</p>
                                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${employee.activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -203,10 +213,19 @@ const Personal = () => {
                                                 <Briefcase className="w-3.5 h-3.5 text-gray-400" />
                                                 {employee.area || 'Sin área'}
                                             </p>
-                                            <p className="text-xs text-gray-500 flex items-center gap-2">
-                                                <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                                                {employee.sede || 'Sin sede'}
-                                            </p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-xs text-gray-500 flex items-center gap-2">
+                                                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                                                    {employee.sede || 'Sin sede'}
+                                                </p>
+                                                <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                                    employee.turno === 'Tarde' ? 'bg-orange-100 text-orange-700' :
+                                                    employee.turno === 'Doble Turno' ? 'bg-purple-100 text-purple-700' :
+                                                    'bg-blue-100 text-blue-700'
+                                                }`}>
+                                                    {employee.turno || 'Mañana'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -276,6 +295,41 @@ const Personal = () => {
                             </button>
                         </div>
                         <form onSubmit={handleSubmit} className="p-6">
+                            
+                            {/* Selector de Foto */}
+                            <div className="flex flex-col items-center justify-center mb-6">
+                                <div className="relative group cursor-pointer" onClick={() => document.getElementById('fotoInput').click()}>
+                                    {formData.fotoPreview || (isEditing && formData.foto_url) ? (
+                                        <img 
+                                            src={formData.fotoPreview || formData.foto_url} 
+                                            alt="Preview" 
+                                            className="w-24 h-24 rounded-full object-cover border-4 border-blue-50 shadow-md"
+                                        />
+                                    ) : (
+                                        <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center border-4 border-gray-50 shadow-inner">
+                                            <Camera className="w-8 h-8 text-gray-400" />
+                                        </div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <Camera className="w-6 h-6 text-white" />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2 font-medium">Subir foto (Opcional)</p>
+                                <input
+                                    id="fotoInput"
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                            const previewUrl = URL.createObjectURL(file);
+                                            setFormData({ ...formData, fotoFile: file, fotoPreview: previewUrl });
+                                        }
+                                    }}
+                                />
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre</label>
@@ -309,11 +363,30 @@ const Personal = () => {
                                     </select>
                                 </div>
                                 <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Turno</label>
+                                    <select
+                                        value={formData.turno || 'Mañana'}
+                                        onChange={(e) => setFormData({ ...formData, turno: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
+                                    >
+                                        {(config?.turnos && config.turnos.length > 0
+                                            ? config.turnos
+                                            : [
+                                                { nombre: 'Mañana' },
+                                                { nombre: 'Tarde' },
+                                                { nombre: 'Doble Turno' }
+                                              ]
+                                        ).map((t, i) => (
+                                            <option key={i} value={t.nombre}>{t.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Sede</label>
                                     <select
                                         value={formData.sede}
                                         onChange={(e) => setFormData({ ...formData, sede: e.target.value })}
-                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500"
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
                                     >
                                         <option value="">Seleccionar Sede</option>
                                         {config?.sedes?.map((s, i) => <option key={i} value={s}>{s}</option>)}

@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 
 const Dashboard = () => {
-    const { getEstadisticasDelDia, getEstadisticasHistoricas } = useApp();
+    const { getEstadisticasDelDia, getEstadisticasHistoricas, config } = useApp();
     const stats = getEstadisticasDelDia();
     const historicalStats = getEstadisticasHistoricas(7);
 
@@ -65,7 +65,7 @@ const Dashboard = () => {
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg border-b-4 border-blue-700 active:scale-95 transition-transform cursor-default">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-1">Total Personal</p>
+                            <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-1">Total {config?.nombreEntidadPlural || 'Personal'}</p>
                             <p className="text-4xl font-black">{stats.total}</p>
                             <p className="text-xs text-blue-100 mt-2 font-bold px-2 py-0.5 bg-white/20 rounded-full inline-block">
                                 {stats.porcentajeAsistencia}% asistencia

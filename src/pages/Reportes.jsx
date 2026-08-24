@@ -9,7 +9,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Reportes = () => {
-    const { employees, attendance, config } = useApp();
+    const { employees, attendance, config, showToast } = useApp();
     const [selectedEmployee, setSelectedEmployee] = useState('');
     const [selectedArea, setSelectedArea] = useState('');
     const [selectedSede, setSelectedSede] = useState('');
@@ -68,7 +68,7 @@ const Reportes = () => {
 
         const employee = employees.find(e => e.id === selectedEmployee);
         if (!employee || !employee.telefono) {
-            alert('No se encontró un número de teléfono para este alumno/personal.');
+            showToast('No se encontró un número de teléfono para este registro.', 'warning');
             return;
         }
 
@@ -312,7 +312,7 @@ _Reporte generado automáticamente._`.trim();
         <div className="space-y-6">
             <div>
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Reportes de Asistencia</h2>
-                <p className="text-gray-600">Consulta y exporta reportes detallados del personal</p>
+                <p className="text-gray-600">Consulta y exporta reportes detallados de {config?.nombreEntidadPlural?.toLowerCase() || 'personal'}</p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
