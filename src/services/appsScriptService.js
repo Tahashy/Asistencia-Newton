@@ -167,63 +167,78 @@ export const addAttendance = async (payload) => {
   const fecha = now.toISOString().split('T')[0];
   const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
 
-  const { data: existing } = await supabase
+  // Obtener todos los registros del empleado para el día de hoy ordenados por entrada desc
+  const { data: existingRecords } = await supabase
     .from('asistencias')
     .select('*')
     .eq('employee_id', employeeId)
     .eq('fecha', fecha)
+    .order('hora_entrada', { ascending: false });
+
+  const { data: emp } = await supabase
+    .from('empleados')
+    .select('turnos(nombre, hora_entrada)')
+    .eq('id', employeeId)
     .maybeSingle();
 
-  if (existing) {
-    if (!existing.hora_salida) {
-      const { error } = await supabase.from('asistencias').update({ hora_salida: timeStr }).eq('id', existing.id);
-      if (error) return handleResponse(error);
-      return { success: true, data: { action: 'SALIDA' } };
-    } else {
+  const nombreTurno = emp?.turnos?.nombre || '';
+  const horaEntradaTurno = emp?.turnos?.hora_entrada;
+  const [hReal] = timeStr.split(':').map(Number);
+
+  const lastRecord = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
+
+  // Si ya tiene un registro hoy y aún NO tiene hora de salida, registramos la salida del turno activo
+  if (lastRecord && !lastRecord.hora_salida) {
+    const { error } = await supabase.from('asistencias').update({ hora_salida: timeStr }).eq('id', lastRecord.id);
+    if (error) return handleResponse(error);
+    return { success: true, data: { action: 'SALIDA' } };
+  }
+
+  // Si el último registro ya completó la salida:
+  if (lastRecord && lastRecord.hora_salida) {
+    // Si NO es Doble Turno o ya completó 2 turnos hoy
+    if (nombreTurno !== 'Doble Turno' || existingRecords.length >= 2) {
       return { success: false, error: 'Ya registró entrada y salida hoy' };
     }
-  } else {
-    // === LÓGICA DE CÁLCULO DE ESTADO ===
-    let estadoAsistencia = 'Presente';
-    
-    // 1. Obtener el turno y horario del empleado
-    const { data: emp } = await supabase.from('empleados').select('turnos(nombre, hora_entrada)').eq('id', employeeId).maybeSingle();
-    const nombreTurno = emp?.turnos?.nombre || '';
-    const horaEntradaTurno = emp?.turnos?.hora_entrada;
-
-    // 2. El Turno Tarde NO tiene tardanza: si marcaron, es Presente
-    const turnoSinTardanza = nombreTurno === 'Tarde';
-
-    if (!turnoSinTardanza && horaEntradaTurno) {
-      // Solo aplicar lógica de tardanza para turnos que NO sean Tarde
-      const { data: conf } = await supabase.from('configuracion').select('tolerancia_minutos').limit(1).maybeSingle();
-      const toleranciaMinutos = conf?.tolerancia_minutos || 15;
-
-      // Hora límite = hora de entrada del turno + tolerancia
-      const entradaEsperadaDate = new Date(`${fecha}T${horaEntradaTurno}`);
-      entradaEsperadaDate.setMinutes(entradaEsperadaDate.getMinutes() + toleranciaMinutos);
-
-      // Hora real en que el usuario está registrando
-      const horaRealDate = new Date(`${fecha}T${timeStr}:00`);
-
-      if (horaRealDate > entradaEsperadaDate) {
-        estadoAsistencia = 'Tardanza';
-      }
-    }
-
-    const newRecord = {
-      employee_id: employeeId,
-      fecha: fecha,
-      hora_entrada: timeStr,
-      metodo_registro: metodoRegistro,
-      registrado_por: registradoPor,
-      estado: estadoAsistencia
-    };
-    
-    const { error } = await supabase.from('asistencias').insert([newRecord]);
-    if (error) return handleResponse(error);
-    return { success: true, data: { action: 'ENTRADA' } };
   }
+
+  // === LÓGICA DE CÁLCULO DE ESTADO ===
+  let estadoAsistencia = 'Presente';
+  
+  // En Doble Turno (tarde >= 13:00) o Turno Tarde, NO existe tardanza: siempre es 'Presente' (simplemente asistió)
+  const esTardeDobleTurno = (nombreTurno === 'Doble Turno' && hReal >= 13);
+  const turnoSinTardanza = nombreTurno === 'Tarde' || esTardeDobleTurno;
+
+  if (!turnoSinTardanza) {
+    // Para Turno Mañana y la Mañana del Doble Turno: se respeta el horario de configuración y la tolerancia
+    const { data: conf } = await supabase.from('configuracion').select('hora_entrada, tolerancia_minutos').limit(1).maybeSingle();
+    const horaEsperada = horaEntradaTurno || conf?.hora_entrada || '08:00';
+    const toleranciaMinutos = conf?.tolerancia_minutos || 15;
+
+    // Hora límite = hora de entrada esperada (del turno o configuración) + tolerancia
+    const entradaEsperadaDate = new Date(`${fecha}T${horaEsperada}`);
+    entradaEsperadaDate.setMinutes(entradaEsperadaDate.getMinutes() + toleranciaMinutos);
+
+    // Hora real en que el usuario está registrando
+    const horaRealDate = new Date(`${fecha}T${timeStr}:00`);
+
+    if (horaRealDate > entradaEsperadaDate) {
+      estadoAsistencia = 'Tardanza';
+    }
+  }
+
+  const newRecord = {
+    employee_id: employeeId,
+    fecha: fecha,
+    hora_entrada: timeStr,
+    metodo_registro: metodoRegistro,
+    registrado_por: registradoPor,
+    estado: estadoAsistencia
+  };
+  
+  const { error } = await supabase.from('asistencias').insert([newRecord]);
+  if (error) return handleResponse(error);
+  return { success: true, data: { action: 'ENTRADA' } };
 };
 
 export const saveJustification = async (payload) => {

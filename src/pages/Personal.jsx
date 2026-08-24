@@ -369,16 +369,22 @@ const Personal = () => {
                                         onChange={(e) => setFormData({ ...formData, turno: e.target.value })}
                                         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
                                     >
-                                        {(config?.turnos && config.turnos.length > 0
-                                            ? config.turnos
-                                            : [
-                                                { nombre: 'Mañana' },
-                                                { nombre: 'Tarde' },
-                                                { nombre: 'Doble Turno' }
-                                              ]
-                                        ).map((t, i) => (
-                                            <option key={i} value={t.nombre}>{t.nombre}</option>
-                                        ))}
+                                        {(() => {
+                                            const turnosBase = config?.turnos && config.turnos.length > 0
+                                                ? config.turnos.map(t => typeof t === 'string' ? { nombre: t } : t)
+                                                : [{ nombre: 'Mañana' }, { nombre: 'Tarde' }, { nombre: 'Doble Turno' }];
+
+                                            const nombresExistentes = turnosBase.map(t => t.nombre);
+                                            const turnosFinales = [...turnosBase];
+
+                                            if (!nombresExistentes.includes('Doble Turno')) {
+                                                turnosFinales.push({ nombre: 'Doble Turno' });
+                                            }
+
+                                            return turnosFinales.map((t, i) => (
+                                                <option key={i} value={t.nombre}>{t.nombre}</option>
+                                            ));
+                                        })()}
                                     </select>
                                 </div>
                                 <div>
