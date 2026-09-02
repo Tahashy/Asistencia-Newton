@@ -246,7 +246,13 @@ const AppProvider = ({ children }) => {
   const agregarEmpleado = async (empleadoData) => {
     setIsLoading(true);
     try {
-      const nuevoId = `EMP${String(employees.length + 1).padStart(3, '0')}`;
+      // Calcular el siguiente ID de forma segura para evitar duplicados
+      // Si se han eliminado empleados, employees.length + 1 puede colisionar
+      const maxNum = employees.reduce((max, e) => {
+        const match = e.id?.match(/^EMP(\d+)$/);
+        return match ? Math.max(max, parseInt(match[1], 10)) : max;
+      }, 0);
+      const nuevoId = `EMP${String(maxNum + 1).padStart(3, '0')}`;
       
       let foto_url = null;
       if (empleadoData.fotoFile) {

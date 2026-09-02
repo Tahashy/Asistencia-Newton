@@ -66,13 +66,38 @@ export const uploadProfilePhoto = async (file, employeeId) => {
 };
 
 // Función auxiliar para obtener ID por nombre (crea si no existe)
+// Usa upsert con onConflict para evitar error 409 si el registro ya existe
 const getOrCreateId = async (table, nombre) => {
   if (!nombre) return null;
-  const { data } = await supabase.from(table).select('id').eq('nombre', nombre).maybeSingle();
-  if (data) return data.id;
-  
-  const { data: newRow } = await supabase.from(table).insert([{ nombre }]).select('id').single();
-  return newRow?.id || null;
+
+  // 1. Intentar obtener el ID existente primero
+  const { data: existing } = await supabase
+    .from(table)
+    .select('id')
+    .eq('nombre', nombre)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  // 2. Si no existe, hacer upsert para evitar race conditions / 409 Conflict
+  const { data: upserted, error } = await supabase
+    .from(table)
+    .upsert([{ nombre }], { onConflict: 'nombre', ignoreDuplicates: false })
+    .select('id')
+    .single();
+
+  if (error) {
+    // Si aún así falla (ej: la restricción no es en 'nombre'), intentar leer de nuevo
+    console.warn(`[getOrCreateId] upsert falló en tabla '${table}':`, error.message);
+    const { data: fallback } = await supabase
+      .from(table)
+      .select('id')
+      .eq('nombre', nombre)
+      .maybeSingle();
+    return fallback?.id || null;
+  }
+
+  return upserted?.id || null;
 };
 
 export const addEmployee = async (employee) => {
