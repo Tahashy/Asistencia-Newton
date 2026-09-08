@@ -18,6 +18,8 @@ const Personal = () => {
     // Búsqueda y Filtros
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedSedeFilter, setSelectedSedeFilter] = useState('');
+    const [selectedAreaFilter, setSelectedAreaFilter] = useState('');
+    const [selectedTurnoFilter, setSelectedTurnoFilter] = useState('');
 
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
@@ -119,7 +121,9 @@ const Personal = () => {
         const fullName = `${employee.nombre} ${employee.apellido}`.toLowerCase();
         const matchesSearch = fullName.includes(searchTerm.toLowerCase());
         const matchesSede = selectedSedeFilter === '' || employee.sede === selectedSedeFilter;
-        return matchesSearch && matchesSede;
+        const matchesArea = selectedAreaFilter === '' || employee.area === selectedAreaFilter;
+        const matchesTurno = selectedTurnoFilter === '' || employee.turno === selectedTurnoFilter;
+        return matchesSearch && matchesSede && matchesArea && matchesTurno;
     });
 
     // Lógica de Paginación
@@ -163,7 +167,8 @@ const Personal = () => {
             {/* TABLA DE PERSONAL */}
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 animate-in fade-in duration-500">
                 {/* Filtros y Búsqueda */}
-                <div className="p-6 border-b border-gray-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-6 border-b border-gray-100 bg-white grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Buscador por nombre */}
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Search className="h-5 w-5 text-gray-400" />
@@ -179,20 +184,51 @@ const Personal = () => {
                             className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500"
                         />
                     </div>
+
+                    {/* Filtro por Sede */}
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Filter className="h-5 w-5 text-gray-400" />
                         </div>
                         <select
                             value={selectedSedeFilter}
-                            onChange={(e) => {
-                                setSelectedSedeFilter(e.target.value);
-                                setCurrentPage(1);
-                            }}
+                            onChange={(e) => { setSelectedSedeFilter(e.target.value); setCurrentPage(1); }}
                             className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
                         >
                             <option value="">Todas las Sedes</option>
                             {config?.sedes?.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Filtro por Área */}
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Briefcase className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <select
+                            value={selectedAreaFilter}
+                            onChange={(e) => { setSelectedAreaFilter(e.target.value); setCurrentPage(1); }}
+                            className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
+                        >
+                            <option value="">Todas las Áreas</option>
+                            {config?.areas?.map((a, i) => <option key={i} value={a}>{a}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Filtro por Turno */}
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <MapPin className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <select
+                            value={selectedTurnoFilter}
+                            onChange={(e) => { setSelectedTurnoFilter(e.target.value); setCurrentPage(1); }}
+                            className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
+                        >
+                            <option value="">Todos los Turnos</option>
+                            {config?.turnos?.map((t, i) => (
+                                <option key={i} value={t.nombre || t}>{t.nombre || t}</option>
+                            ))}
                         </select>
                     </div>
                 </div>

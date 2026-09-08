@@ -46,11 +46,10 @@ const AppContent = () => {
         const hoy = getCurrentDate();
         const registroHoy = attendance.find(a => a.employeeId === employee.id && a.fecha === hoy);
 
-        if (!registroHoy || !registroHoy.horaSalida || registroHoy.horaSalida === '-') {
-            // El servidor decidirá si es ENTRADA (si no hay fila) o SALIDA (si hay fila sin salida)
-            await registrarAsistencia(employee.id, 'QR');
+        if (registroHoy) {
+            showToast(`${employee.nombre} ya tiene asistencia registrada hoy`, 'info');
         } else {
-            showToast(`${employee.nombre} ya completó su asistencia de hoy`, 'info');
+            await registrarEntrada(employee.id, 'QR');
         }
 
         // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos

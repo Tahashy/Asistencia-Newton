@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Filter, Download, FileText, Table, MessageCircle
+    Filter, Download, FileText, Table, MessageCircle, Search, X
 } from 'lucide-react';
 import Pagination from '../components/ui/Pagination';
 import * as XLSX from 'xlsx';
@@ -14,6 +14,8 @@ const Reportes = () => {
     const [selectedArea, setSelectedArea] = useState('');
     const [selectedSede, setSelectedSede] = useState('');
     const [dateRange, setDateRange] = useState({ inicio: '', fin: '' });
+    const [personSearch, setPersonSearch] = useState('');
+    const [comboOpen, setComboOpen] = useState(false);
 
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
@@ -326,18 +328,74 @@ _Reporte generado automáticamente._`.trim();
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="lg:col-span-2">
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Seleccionar Persona</label>
-                            <select
-                                value={selectedEmployee}
-                                onChange={(e) => { setSelectedEmployee(e.target.value); setCurrentPage(1); }}
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all"
-                            >
-                                <option value="">Todos los registros</option>
-                                {employees.map(emp => (
-                                    <option key={emp.id} value={emp.id}>
-                                        {emp.nombre} {emp.apellido} ({emp.id})
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="relative">
+                                {/* Input con nombre del seleccionado o búsqueda */}
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar persona..."
+                                        value={comboOpen
+                                            ? personSearch
+                                            : selectedEmployee
+                                                ? (() => { const e = employees.find(e => e.id === selectedEmployee); return e ? `${e.nombre} ${e.apellido}` : ''; })()
+                                                : ''
+                                        }
+                                        onFocus={() => { setComboOpen(true); setPersonSearch(''); }}
+                                        onChange={(e) => setPersonSearch(e.target.value)}
+                                        onBlur={() => setTimeout(() => setComboOpen(false), 150)}
+                                        className="w-full pl-9 pr-8 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all"
+                                    />
+                                    {selectedEmployee && !comboOpen && (
+                                        <button
+                                            onMouseDown={(e) => { e.preventDefault(); setSelectedEmployee(''); setPersonSearch(''); setCurrentPage(1); }}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Dropdown */}
+                                {comboOpen && (
+                                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                                        {/* Opción "Todos" */}
+                                        <div
+                                            onMouseDown={() => { setSelectedEmployee(''); setComboOpen(false); setCurrentPage(1); }}
+                                            className={`px-4 py-2.5 cursor-pointer text-sm hover:bg-blue-50 ${!selectedEmployee ? 'bg-blue-50 font-bold text-blue-700' : 'text-gray-700'}`}
+                                        >
+                                            Todos los registros
+                                        </div>
+                                        {/* Lista filtrada */}
+                                        {employees
+                                            .filter(emp => {
+                                                const q = personSearch.toLowerCase();
+                                                return (
+                                                    (emp.nombre || '').toLowerCase().includes(q) ||
+                                                    (emp.apellido || '').toLowerCase().includes(q) ||
+                                                    (emp.id || '').toLowerCase().includes(q)
+                                                );
+                                            })
+                                            .map(emp => (
+                                                <div
+                                                    key={emp.id}
+                                                    onMouseDown={() => { setSelectedEmployee(emp.id); setComboOpen(false); setCurrentPage(1); }}
+                                                    className={`px-4 py-2.5 cursor-pointer text-sm hover:bg-blue-50 ${selectedEmployee === emp.id ? 'bg-blue-50 font-bold text-blue-700' : 'text-gray-700'}`}
+                                                >
+                                                    <span className="font-medium">{emp.nombre} {emp.apellido}</span>
+                                                    <span className="text-gray-400 text-xs ml-2">({emp.id})</span>
+                                                </div>
+                                            ))
+                                        }
+                                        {employees.filter(emp => {
+                                            const q = personSearch.toLowerCase();
+                                            return (emp.nombre || '').toLowerCase().includes(q) || (emp.apellido || '').toLowerCase().includes(q) || (emp.id || '').toLowerCase().includes(q);
+                                        }).length === 0 && (
+                                            <div className="px-4 py-3 text-sm text-gray-400 text-center">Sin resultados</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Desde</label>

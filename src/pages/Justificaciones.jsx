@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    CheckCircle
+    CheckCircle, Search, X, Filter, Briefcase, Clock
 } from 'lucide-react';
 
 const Justificaciones = () => {
@@ -10,17 +10,40 @@ const Justificaciones = () => {
     const [selectedDate, setSelectedDate] = useState('');
     const [motivo, setMotivo] = useState('');
 
+    // Estados del combo buscador
+    const [personSearch, setPersonSearch] = useState('');
+    const [comboOpen, setComboOpen] = useState(false);
+
+    // Filtros para reducir la lista del combo
+    const [filterSede, setFilterSede] = useState('');
+    const [filterArea, setFilterArea] = useState('');
+    const [filterTurno, setFilterTurno] = useState('');
+
     const handleSubmit = (e) => {
         e.preventDefault();
         registrarJustificacion(selectedEmployee, selectedDate, motivo);
         setSelectedEmployee('');
         setSelectedDate('');
         setMotivo('');
+        setPersonSearch('');
     };
 
+    // Lista filtrada de empleados (por sede/area/turno + búsqueda en el combo)
+    const filteredForCombo = employees.filter(emp => {
+        const q = personSearch.toLowerCase();
+        const matchSearch = !q ||
+            (emp.nombre || '').toLowerCase().includes(q) ||
+            (emp.apellido || '').toLowerCase().includes(q) ||
+            (emp.id || '').toLowerCase().includes(q);
+        const matchSede = !filterSede || emp.sede === filterSede;
+        const matchArea = !filterArea || emp.area === filterArea;
+        const matchTurno = !filterTurno || emp.turno === filterTurno;
+        return matchSearch && matchSede && matchArea && matchTurno;
+    });
+
+    const selectedEmp = employees.find(e => e.id === selectedEmployee);
+
     // Calcular ausencias reales de los últimos 30 días laborales.
-    // Las "Faltas" no se insertan en Supabase (son virtuales), por eso
-    // hay que calcularlas comparando empleados vs registros existentes.
     const calcularFaltasPendientes = () => {
         const diasLaborales = config?.diasLaborales || [1, 2, 3, 4, 5];
         const empleadosActivos = employees.filter(e => e.activo);
@@ -31,17 +54,10 @@ const Justificaciones = () => {
             const dia = new Date(hoy);
             dia.setDate(hoy.getDate() - i);
             const diaNum = dia.getDay();
-
-            // Solo días laborales
             if (!diasLaborales.includes(diaNum)) continue;
-
             const fechaStr = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
-
             empleadosActivos.forEach(emp => {
-                // Si no tiene registro ese día (ni justificado), es falta pendiente
-                const tieneRegistro = attendance.some(
-                    a => a.employeeId === emp.id && a.fecha === fechaStr
-                );
+                const tieneRegistro = attendance.some(a => a.employeeId === emp.id && a.fecha === fechaStr);
                 if (!tieneRegistro) count++;
             });
         }
@@ -49,7 +65,6 @@ const Justificaciones = () => {
     };
 
     const totalFaltasPendientes = calcularFaltasPendientes();
-
 
     return (
         <div className="space-y-6">
@@ -59,32 +74,123 @@ const Justificaciones = () => {
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold mb-4">Nueva Justificación</h3>
+                <h3 className="text-xl font-bold mb-5">Nueva Justificación</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <select
-                            value={selectedEmployee}
-                            onChange={(e) => setSelectedEmployee(e.target.value)}
-                            className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
-                            required
-                        >
-                            <option value="">Seleccionar {config?.nombreEntidadSingular?.toLowerCase() || 'persona'}</option>
-                            {employees.map(emp => (
-                                <option key={emp.id} value={emp.id}>
-                                    {emp.nombre} {emp.apellido}
-                                </option>
-                            ))}
-                        </select>
 
+                    {/* ── Filtros de Sede / Área / Turno ── */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Filtro Sede */}
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <select
+                                value={filterSede}
+                                onChange={(e) => { setFilterSede(e.target.value); setSelectedEmployee(''); setPersonSearch(''); }}
+                                className="pl-9 w-full py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none bg-white transition-all"
+                            >
+                                <option value="">Todas las Sedes</option>
+                                {config?.sedes?.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Filtro Área */}
+                        <div className="relative">
+                            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <select
+                                value={filterArea}
+                                onChange={(e) => { setFilterArea(e.target.value); setSelectedEmployee(''); setPersonSearch(''); }}
+                                className="pl-9 w-full py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none bg-white transition-all"
+                            >
+                                <option value="">Todas las Áreas</option>
+                                {config?.areas?.map((a, i) => <option key={i} value={a}>{a}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Filtro Turno */}
+                        <div className="relative">
+                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <select
+                                value={filterTurno}
+                                onChange={(e) => { setFilterTurno(e.target.value); setSelectedEmployee(''); setPersonSearch(''); }}
+                                className="pl-9 w-full py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none bg-white transition-all"
+                            >
+                                <option value="">Todos los Turnos</option>
+                                {config?.turnos?.map((t, i) => (
+                                    <option key={i} value={t.nombre || t}>{t.nombre || t}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* ── Combo buscador de alumno + fecha ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        {/* Combo con buscador */}
+                        <div className="relative">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder={`Buscar ${config?.nombreEntidadSingular?.toLowerCase() || 'alumno'}...`}
+                                    value={comboOpen
+                                        ? personSearch
+                                        : selectedEmp
+                                            ? `${selectedEmp.nombre} ${selectedEmp.apellido}`
+                                            : ''
+                                    }
+                                    onFocus={() => { setComboOpen(true); setPersonSearch(''); }}
+                                    onChange={(e) => setPersonSearch(e.target.value)}
+                                    onBlur={() => setTimeout(() => setComboOpen(false), 150)}
+                                    required={!selectedEmployee}
+                                    className="w-full pl-9 pr-8 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-all"
+                                />
+                                {selectedEmployee && !comboOpen && (
+                                    <button
+                                        type="button"
+                                        onMouseDown={(e) => { e.preventDefault(); setSelectedEmployee(''); setPersonSearch(''); }}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Dropdown */}
+                            {comboOpen && (
+                                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                                    {filteredForCombo.length === 0 ? (
+                                        <div className="px-4 py-3 text-sm text-gray-400 text-center">Sin resultados</div>
+                                    ) : (
+                                        filteredForCombo.map(emp => (
+                                            <div
+                                                key={emp.id}
+                                                onMouseDown={() => { setSelectedEmployee(emp.id); setComboOpen(false); }}
+                                                className={`px-4 py-2.5 cursor-pointer text-sm hover:bg-blue-50 ${selectedEmployee === emp.id ? 'bg-blue-50 font-bold text-blue-700' : 'text-gray-700'}`}
+                                            >
+                                                <span className="font-medium">{emp.nombre} {emp.apellido}</span>
+                                                <span className="text-gray-400 text-xs ml-2">
+                                                    {emp.sede && `· ${emp.sede}`} {emp.turno && `· ${emp.turno}`}
+                                                </span>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Input oculto para validación del formulario */}
+                            <input type="text" value={selectedEmployee} required readOnly className="sr-only" />
+                        </div>
+
+                        {/* Fecha */}
                         <input
                             type="date"
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
-                            className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
+                            className="px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
                             required
                         />
                     </div>
 
+                    {/* Motivo */}
                     <textarea
                         value={motivo}
                         onChange={(e) => setMotivo(e.target.value)}

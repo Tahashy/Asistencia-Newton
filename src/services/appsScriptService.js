@@ -212,19 +212,9 @@ export const addAttendance = async (payload) => {
 
   const lastRecord = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
 
-  // Si ya tiene un registro hoy y aún NO tiene hora de salida, registramos la salida del turno activo
-  if (lastRecord && !lastRecord.hora_salida) {
-    const { error } = await supabase.from('asistencias').update({ hora_salida: timeStr }).eq('id', lastRecord.id);
-    if (error) return handleResponse(error);
-    return { success: true, data: { action: 'SALIDA' } };
-  }
-
-  // Si el último registro ya completó la salida:
-  if (lastRecord && lastRecord.hora_salida) {
-    // Si NO es Doble Turno o ya completó 2 turnos hoy
-    if (nombreTurno !== 'Doble Turno' || existingRecords.length >= 2) {
-      return { success: false, error: 'Ya registró entrada y salida hoy' };
-    }
+  // Si ya tiene un registro hoy, no se permite registrar de nuevo
+  if (lastRecord) {
+    return { success: false, error: 'Ya registró asistencia hoy' };
   }
 
   // === LÓGICA DE CÁLCULO DE ESTADO ===

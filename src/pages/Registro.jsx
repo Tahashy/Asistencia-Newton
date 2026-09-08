@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Search, Camera, UserCheck, CheckCircle, Clock, LogIn, LogOut, AlertCircle
+    Search, Camera, UserCheck, CheckCircle, Clock, LogIn, AlertCircle
 } from 'lucide-react';
 import { QRScanner } from '../components/attendance/QRScanner';
 
 const Registro = () => {
-    const { employees, attendance, registrarEntrada, registrarSalida, config, getCurrentDate, isLoading } = useApp();
+    const { employees, attendance, registrarEntrada, config, getCurrentDate, isLoading } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [scanMode, setScanMode] = useState(false);
@@ -29,41 +29,21 @@ const Registro = () => {
         }
     };
 
-    // Obtener el estado real del empleado seleccionado para HOY
-    // Esto evita que el botón "Registrar Entrada" dispare una salida por error
+    // Solo dos estados: ya registrado hoy o sin registro
     const getEstadoHoy = (employee) => {
         if (!employee) return null;
         const hoy = getCurrentDate();
-
-        const registrosHoy = attendance
-            .filter(a => a.employeeId === employee.id && a.fecha === hoy)
-            .sort((a, b) => (b.horaEntrada || '').localeCompare(a.horaEntrada || ''));
-
+        const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
         if (registrosHoy.length === 0) return { estado: 'SIN_REGISTRO' };
-
-        const ultimoSinSalida = registrosHoy.find(r => !r.horaSalida);
-        if (ultimoSinSalida) {
-            return { estado: 'CON_ENTRADA', registro: ultimoSinSalida };
-        }
-
-        // Todos tienen salida — verificar si es Doble Turno con turno pendiente
-        const esDobleTurno = employee.turno === 'Doble Turno';
-        if (esDobleTurno && registrosHoy.length < 2) {
-            return { estado: 'SIN_REGISTRO' }; // Puede registrar el segundo turno
-        }
-
-        return { estado: 'COMPLETO', registros: registrosHoy };
+        const ultimo = registrosHoy.sort((a, b) => (b.horaEntrada || '').localeCompare(a.horaEntrada || ''))[0];
+        return { estado: 'YA_REGISTRADO', registro: ultimo };
     };
 
     const estadoHoy = getEstadoHoy(selectedEmployee);
 
-    const handleAccion = async (tipo) => {
+    const handleAccion = async () => {
         if (!selectedEmployee || isLoading) return;
-        if (tipo === 'entrada') {
-            await registrarEntrada(selectedEmployee.id, 'Manual');
-        } else {
-            await registrarSalida(selectedEmployee.id, 'Manual');
-        }
+        await registrarEntrada(selectedEmployee.id, 'Manual');
         setSelectedEmployee(null);
         setSearchTerm('');
     };
@@ -72,7 +52,7 @@ const Registro = () => {
         <div className="space-y-6">
             <div>
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Registrar Asistencia</h2>
-                <p className="text-gray-600">Registra entrada y salida de {config?.nombreEntidad?.toLowerCase() || 'personal'}</p>
+                <p className="text-gray-600">Registra la asistencia de {config?.nombreEntidad?.toLowerCase() || 'personal'}</p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-6">
@@ -100,8 +80,7 @@ const Registro = () => {
                     {filteredEmployees.map(employee => {
                         const hoy = getCurrentDate();
                         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
-                        const tieneSalida = registrosHoy.length > 0 && registrosHoy.every(r => r.horaSalida);
-                        const tieneEntrada = registrosHoy.length > 0 && registrosHoy.some(r => r.horaEntrada);
+                        const tieneEntrada = registrosHoy.length > 0;
 
                         return (
                             <div
@@ -118,11 +97,8 @@ const Registro = () => {
                                         <p className="font-semibold text-lg">{employee.nombre} {employee.apellido}</p>
                                         <p className="text-sm text-gray-600">{employee.id} • {employee.area || 'Sin área'} • {employee.sede || 'Sin sede'}</p>
                                     </div>
-                                    {/* Badge de estado del día */}
-                                    {tieneSalida ? (
-                                        <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">Completo ✓</span>
-                                    ) : tieneEntrada ? (
-                                        <span className="text-xs font-bold bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full">En turno</span>
+                                    {tieneEntrada ? (
+                                        <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">Presente ✓</span>
                                     ) : (
                                         <UserCheck className="w-6 h-6 text-gray-400" />
                                     )}
@@ -142,74 +118,40 @@ const Registro = () => {
                         <p className="text-xs text-gray-500 mt-1">ID: {selectedEmployee.id} · Turno: {selectedEmployee.turno || 'Mañana'}</p>
                     </div>
 
-                    {/* Panel informativo de estado actual */}
-                    {estadoHoy.estado === 'CON_ENTRADA' && (
-                        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                            <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0" />
-                            <div>
-                                <p className="text-sm font-bold text-yellow-800">
-                                    Entrada registrada a las {estadoHoy.registro?.horaEntrada || '-'}
-                                </p>
-                                <p className="text-xs text-yellow-700">Falta registrar la salida.</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {estadoHoy.estado === 'COMPLETO' && (
+                    {/* Panel informativo si ya tiene entrada */}
+                    {estadoHoy.estado === 'YA_REGISTRADO' && (
                         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                             <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                             <div>
-                                <p className="text-sm font-bold text-green-800">Asistencia completa del día</p>
+                                <p className="text-sm font-bold text-green-800">
+                                    Asistencia ya registrada hoy
+                                </p>
                                 <p className="text-xs text-green-700">
-                                    Entrada: {estadoHoy.registros?.[estadoHoy.registros.length - 1]?.horaEntrada || '-'} · Salida: {estadoHoy.registros?.[0]?.horaSalida || '-'}
+                                    Entrada: {estadoHoy.registro?.horaEntrada || '-'}
                                 </p>
                             </div>
                         </div>
                     )}
 
-                    {/* Botones inteligentes según estado */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* ENTRADA: habilitado solo si no tiene registro hoy */}
-                        <button
-                            onClick={() => handleAccion('entrada')}
-                            disabled={isLoading || estadoHoy.estado !== 'SIN_REGISTRO'}
-                            title={
-                                estadoHoy.estado === 'CON_ENTRADA' ? 'Este empleado ya tiene entrada registrada' :
-                                estadoHoy.estado === 'COMPLETO' ? 'Este empleado ya completó su jornada' : ''
-                            }
-                            className={`font-semibold py-4 px-6 rounded-lg transition-all flex items-center justify-center gap-2 ${
-                                estadoHoy.estado === 'SIN_REGISTRO' && !isLoading
-                                    ? 'bg-green-500 hover:bg-green-600 text-white shadow-md active:scale-95 cursor-pointer'
-                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
-                        >
-                            <LogIn className="w-5 h-5" />
-                            {isLoading ? 'Registrando...' : 'Registrar Entrada'}
-                        </button>
+                    {/* Botón de entrada */}
+                    <button
+                        onClick={handleAccion}
+                        disabled={isLoading || estadoHoy.estado === 'YA_REGISTRADO'}
+                        title={estadoHoy.estado === 'YA_REGISTRADO' ? 'Este alumno ya tiene asistencia registrada hoy' : ''}
+                        className={`w-full font-semibold py-4 px-6 rounded-lg transition-all flex items-center justify-center gap-2 ${
+                            estadoHoy.estado === 'SIN_REGISTRO' && !isLoading
+                                ? 'bg-green-500 hover:bg-green-600 text-white shadow-md active:scale-95 cursor-pointer'
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                    >
+                        <LogIn className="w-5 h-5" />
+                        {isLoading ? 'Registrando...' : 'Registrar Entrada'}
+                    </button>
 
-                        {/* SALIDA: habilitado solo si tiene entrada pendiente de salida */}
-                        <button
-                            onClick={() => handleAccion('salida')}
-                            disabled={isLoading || estadoHoy.estado !== 'CON_ENTRADA'}
-                            title={
-                                estadoHoy.estado === 'SIN_REGISTRO' ? 'Primero debe registrar la entrada' :
-                                estadoHoy.estado === 'COMPLETO' ? 'Este empleado ya completó su jornada' : ''
-                            }
-                            className={`font-semibold py-4 px-6 rounded-lg transition-all flex items-center justify-center gap-2 ${
-                                estadoHoy.estado === 'CON_ENTRADA' && !isLoading
-                                    ? 'bg-blue-500 hover:bg-blue-600 text-white shadow-md active:scale-95 cursor-pointer'
-                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
-                        >
-                            <LogOut className="w-5 h-5" />
-                            {isLoading ? 'Registrando...' : 'Registrar Salida'}
-                        </button>
-                    </div>
-
-                    {estadoHoy.estado === 'COMPLETO' && (
+                    {estadoHoy.estado === 'YA_REGISTRADO' && (
                         <p className="text-center text-sm text-gray-500 mt-4 flex items-center justify-center gap-1">
                             <AlertCircle className="w-4 h-4" />
-                            Este empleado ya completó su asistencia hoy.
+                            Este alumno ya completó su asistencia hoy.
                         </p>
                     )}
                 </div>
@@ -226,3 +168,4 @@ const Registro = () => {
 };
 
 export default Registro;
+
