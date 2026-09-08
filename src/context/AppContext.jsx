@@ -25,8 +25,10 @@ const AppProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    // Solo cargar datos cuando hay un usuario autenticado.
+    // Sin este guard, también se disparaba al hacer logout (currentUser → null).
+    if (!currentUser) return;
     loadInitialData();
-
   }, [currentUser]);
 
 

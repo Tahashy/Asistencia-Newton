@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2, Camera
+    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2, Camera, Search, Filter
 } from 'lucide-react';
 import QRCode from '../components/ui/QRCode';
 import Pagination from '../components/ui/Pagination';
@@ -14,6 +14,10 @@ const Personal = () => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [employeeToDelete, setEmployeeToDelete] = useState(null);
     const [isDeletingAll, setIsDeletingAll] = useState(false);
+
+    // Búsqueda y Filtros
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedSedeFilter, setSelectedSedeFilter] = useState('');
 
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
@@ -110,11 +114,19 @@ const Personal = () => {
         }
     };
 
+    // Filtrado y Búsqueda
+    const filteredEmployees = employees.filter(employee => {
+        const fullName = `${employee.nombre} ${employee.apellido}`.toLowerCase();
+        const matchesSearch = fullName.includes(searchTerm.toLowerCase());
+        const matchesSede = selectedSedeFilter === '' || employee.sede === selectedSedeFilter;
+        return matchesSearch && matchesSede;
+    });
+
     // Lógica de Paginación
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-    const currentEmployees = employees.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(employees.length / itemsPerPage);
+    const currentEmployees = filteredEmployees.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
 
     return (
         <div className="space-y-6">
@@ -150,6 +162,41 @@ const Personal = () => {
 
             {/* TABLA DE PERSONAL */}
             <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 animate-in fade-in duration-500">
+                {/* Filtros y Búsqueda */}
+                <div className="p-6 border-b border-gray-100 bg-white grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Buscar por nombre o apellido..."
+                            value={searchTerm}
+                            onChange={(e) => {
+                                setSearchTerm(e.target.value);
+                                setCurrentPage(1);
+                            }}
+                            className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500"
+                        />
+                    </div>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Filter className="h-5 w-5 text-gray-400" />
+                        </div>
+                        <select
+                            value={selectedSedeFilter}
+                            onChange={(e) => {
+                                setSelectedSedeFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
+                            className="pl-10 w-full px-4 py-2.5 border border-gray-200 rounded-xl transition-all outline-none focus:border-blue-500 bg-white"
+                        >
+                            <option value="">Todas las Sedes</option>
+                            {config?.sedes?.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                </div>
+
                 {/* Controles superiores de tabla */}
                 <div className="px-6 py-4 flex justify-between items-center bg-gray-50/50 border-b border-gray-100">
                     <div className="flex items-center gap-3 text-sm">

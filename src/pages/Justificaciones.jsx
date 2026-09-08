@@ -18,13 +18,44 @@ const Justificaciones = () => {
         setMotivo('');
     };
 
-    const faltasPendientes = attendance.filter(a => a.estado === 'Falta');
+    // Calcular ausencias reales de los últimos 30 días laborales.
+    // Las "Faltas" no se insertan en Supabase (son virtuales), por eso
+    // hay que calcularlas comparando empleados vs registros existentes.
+    const calcularFaltasPendientes = () => {
+        const diasLaborales = config?.diasLaborales || [1, 2, 3, 4, 5];
+        const empleadosActivos = employees.filter(e => e.activo);
+        const hoy = new Date();
+        let count = 0;
+
+        for (let i = 1; i <= 30; i++) {
+            const dia = new Date(hoy);
+            dia.setDate(hoy.getDate() - i);
+            const diaNum = dia.getDay();
+
+            // Solo días laborales
+            if (!diasLaborales.includes(diaNum)) continue;
+
+            const fechaStr = `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}-${String(dia.getDate()).padStart(2, '0')}`;
+
+            empleadosActivos.forEach(emp => {
+                // Si no tiene registro ese día (ni justificado), es falta pendiente
+                const tieneRegistro = attendance.some(
+                    a => a.employeeId === emp.id && a.fecha === fechaStr
+                );
+                if (!tieneRegistro) count++;
+            });
+        }
+        return count;
+    };
+
+    const totalFaltasPendientes = calcularFaltasPendientes();
+
 
     return (
         <div className="space-y-6">
             <div>
                 <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Justificaciones</h2>
-                <p className="text-gray-600">{faltasPendientes.length} faltas pendientes de justificar</p>
+                <p className="text-gray-600">{totalFaltasPendientes} {totalFaltasPendientes === 1 ? 'falta pendiente' : 'faltas pendientes'} de justificar (últimos 30 días)</p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg p-6">
