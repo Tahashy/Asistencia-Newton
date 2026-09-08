@@ -197,6 +197,7 @@ const AppProvider = ({ children }) => {
         showToast(msg, 'success');
         return { success: true };
       }
+      showToast(response.error || 'No se pudo registrar la asistencia', 'warning');
       return { success: false };
     } catch (error) {
       console.error('Error al registrar asistencia:', error);

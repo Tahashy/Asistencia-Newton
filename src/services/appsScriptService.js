@@ -210,19 +210,27 @@ export const addAttendance = async (payload) => {
   const horaEntradaTurno = emp?.turnos?.hora_entrada;
   const [hReal] = timeStr.split(':').map(Number);
 
-  const lastRecord = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
+  const totalHoy = existingRecords ? existingRecords.length : 0;
+  const esDobleTurno = nombreTurno === 'Doble Turno';
+  const maxPermitidos = esDobleTurno ? 2 : 1;
 
-  // Si ya tiene un registro hoy, no se permite registrar de nuevo
-  if (lastRecord) {
-    return { success: false, error: 'Ya registró asistencia hoy' };
+  // Si ya alcanzó el número máximo de asistencias del día
+  if (totalHoy >= maxPermitidos) {
+    return {
+      success: false,
+      error: esDobleTurno
+        ? 'El alumno ya registró sus 2 asistencias de Doble Turno hoy'
+        : 'Ya registró asistencia hoy'
+    };
   }
 
   // === LÓGICA DE CÁLCULO DE ESTADO ===
   let estadoAsistencia = 'Presente';
   
-  // En Doble Turno (tarde >= 13:00) o Turno Tarde, NO existe tardanza: siempre es 'Presente' (simplemente asistió)
-  const esTardeDobleTurno = (nombreTurno === 'Doble Turno' && hReal >= 13);
+  // En la 2ª asistencia de Doble Turno o Turno Tarde, NO existe tardanza (siempre es 'Presente')
+  const esTardeDobleTurno = esDobleTurno && (hReal >= 12 || totalHoy === 1);
   const turnoSinTardanza = nombreTurno === 'Tarde' || esTardeDobleTurno;
+
 
   if (!turnoSinTardanza) {
     // Para Turno Mañana y la Mañana del Doble Turno: se respeta el horario de configuración y la tolerancia

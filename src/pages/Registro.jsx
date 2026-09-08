@@ -29,14 +29,21 @@ const Registro = () => {
         }
     };
 
-    // Solo dos estados: ya registrado hoy o sin registro
+    // Evaluación de asistencias según el turno (Max 1 o Max 2 para Doble Turno)
     const getEstadoHoy = (employee) => {
         if (!employee) return null;
         const hoy = getCurrentDate();
         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
-        if (registrosHoy.length === 0) return { estado: 'SIN_REGISTRO' };
-        const ultimo = registrosHoy.sort((a, b) => (b.horaEntrada || '').localeCompare(a.horaEntrada || ''))[0];
-        return { estado: 'YA_REGISTRADO', registro: ultimo };
+        const esDobleTurno = employee.turno === 'Doble Turno';
+        const maxRegistros = esDobleTurno ? 2 : 1;
+
+        if (registrosHoy.length === 0) {
+            return { estado: 'SIN_REGISTRO', count: 0, max: maxRegistros, esDobleTurno };
+        }
+        if (registrosHoy.length < maxRegistros) {
+            return { estado: 'TURNO_PENDIENTE', count: registrosHoy.length, max: maxRegistros, esDobleTurno, registros: registrosHoy };
+        }
+        return { estado: 'YA_REGISTRADO', count: registrosHoy.length, max: maxRegistros, esDobleTurno, registros: registrosHoy };
     };
 
     const estadoHoy = getEstadoHoy(selectedEmployee);
@@ -80,7 +87,10 @@ const Registro = () => {
                     {filteredEmployees.map(employee => {
                         const hoy = getCurrentDate();
                         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
-                        const tieneEntrada = registrosHoy.length > 0;
+                        const esDobleTurno = employee.turno === 'Doble Turno';
+                        const maxRegistros = esDobleTurno ? 2 : 1;
+                        const yaCompleto = registrosHoy.length >= maxRegistros;
+                        const esParcial = esDobleTurno && registrosHoy.length === 1;
 
                         return (
                             <div
@@ -97,8 +107,14 @@ const Registro = () => {
                                         <p className="font-semibold text-lg">{employee.nombre} {employee.apellido}</p>
                                         <p className="text-sm text-gray-600">{employee.id} • {employee.area || 'Sin área'} • {employee.sede || 'Sin sede'}</p>
                                     </div>
-                                    {tieneEntrada ? (
-                                        <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">Presente ✓</span>
+                                    {yaCompleto ? (
+                                        <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                                            {esDobleTurno ? '2/2 Completo ✓' : 'Presente ✓'}
+                                        </span>
+                                    ) : esParcial ? (
+                                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
+                                            1/2 (Tarde pend.)
+                                        </span>
                                     ) : (
                                         <UserCheck className="w-6 h-6 text-gray-400" />
                                     )}
@@ -118,16 +134,32 @@ const Registro = () => {
                         <p className="text-xs text-gray-500 mt-1">ID: {selectedEmployee.id} · Turno: {selectedEmployee.turno || 'Mañana'}</p>
                     </div>
 
-                    {/* Panel informativo si ya tiene entrada */}
+                    {/* Banner para Turno Pendiente (Doble Turno) */}
+                    {estadoHoy.estado === 'TURNO_PENDIENTE' && (
+                        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-bold text-amber-800">
+                                    1ª Asistencia (Mañana) registrada a las {estadoHoy.registros?.[0]?.horaEntrada || '-'}
+                                </p>
+                                <p className="text-xs text-amber-700">Falta registrar la 2ª Asistencia del Turno Tarde.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Banner si ya completó todas las asistencias del día */}
                     {estadoHoy.estado === 'YA_REGISTRADO' && (
                         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                             <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
                             <div>
                                 <p className="text-sm font-bold text-green-800">
-                                    Asistencia ya registrada hoy
+                                    {estadoHoy.esDobleTurno ? 'Asistencias completas del Doble Turno (2/2)' : 'Asistencia ya registrada hoy'}
                                 </p>
                                 <p className="text-xs text-green-700">
-                                    Entrada: {estadoHoy.registro?.horaEntrada || '-'}
+                                    {estadoHoy.esDobleTurno
+                                        ? `1º Turno: ${estadoHoy.registros?.[0]?.horaEntrada || '-'} · 2º Turno: ${estadoHoy.registros?.[1]?.horaEntrada || '-'}`
+                                        : `Entrada: ${estadoHoy.registros?.[0]?.horaEntrada || '-'}`
+                                    }
                                 </p>
                             </div>
                         </div>
@@ -137,15 +169,20 @@ const Registro = () => {
                     <button
                         onClick={handleAccion}
                         disabled={isLoading || estadoHoy.estado === 'YA_REGISTRADO'}
-                        title={estadoHoy.estado === 'YA_REGISTRADO' ? 'Este alumno ya tiene asistencia registrada hoy' : ''}
+                        title={estadoHoy.estado === 'YA_REGISTRADO' ? 'Este alumno ya completó su asistencia hoy' : ''}
                         className={`w-full font-semibold py-4 px-6 rounded-lg transition-all flex items-center justify-center gap-2 ${
-                            estadoHoy.estado === 'SIN_REGISTRO' && !isLoading
+                            estadoHoy.estado !== 'YA_REGISTRADO' && !isLoading
                                 ? 'bg-green-500 hover:bg-green-600 text-white shadow-md active:scale-95 cursor-pointer'
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                     >
                         <LogIn className="w-5 h-5" />
-                        {isLoading ? 'Registrando...' : 'Registrar Entrada'}
+                        {isLoading
+                            ? 'Registrando...'
+                            : estadoHoy.estado === 'TURNO_PENDIENTE'
+                                ? 'Registrar 2ª Entrada (Turno Tarde)'
+                                : 'Registrar Entrada'
+                        }
                     </button>
 
                     {estadoHoy.estado === 'YA_REGISTRADO' && (
@@ -156,6 +193,7 @@ const Registro = () => {
                     )}
                 </div>
             )}
+
 
             {scanMode && (
                 <QRScanner

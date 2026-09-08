@@ -44,10 +44,12 @@ const AppContent = () => {
         }
 
         const hoy = getCurrentDate();
-        const registroHoy = attendance.find(a => a.employeeId === employee.id && a.fecha === hoy);
+        const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
+        const esDobleTurno = employee.turno === 'Doble Turno';
+        const maxRegistros = esDobleTurno ? 2 : 1;
 
-        if (registroHoy) {
-            showToast(`${employee.nombre} ya tiene asistencia registrada hoy`, 'info');
+        if (registrosHoy.length >= maxRegistros) {
+            showToast(`${employee.nombre} ya completó sus asistencias de hoy (${registrosHoy.length}/${maxRegistros})`, 'info');
         } else {
             await registrarEntrada(employee.id, 'QR');
         }
