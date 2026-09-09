@@ -216,13 +216,17 @@ const AppProvider = ({ children }) => {
   const registrarEntrada = (id, metodo) => registrarAsistencia(id, metodo || 'QR');
   const registrarSalida = (id, metodo) => registrarAsistencia(id, metodo || 'QR');
 
-  const registrarJustificacion = async (employeeId, fecha, motivo) => {
+  const registrarJustificacion = async (employeeId, fecha, motivo, turnoJustificado) => {
     setIsLoading(true);
     try {
+      const textoJustificacion = turnoJustificado
+        ? `[Turno: ${turnoJustificado}] ${motivo}`
+        : motivo;
+
       const payload = {
         employeeId,
         fecha,
-        justificacion: motivo,
+        justificacion: textoJustificacion,
         registradoPor: currentUser?.nombre || 'Admin'
       };
 
@@ -236,6 +240,7 @@ const AppProvider = ({ children }) => {
         showToast('Justificación registrada correctamente', 'success');
         return { success: true };
       }
+      showToast(response.error || 'Error al registrar justificación', 'error');
       return { success: false };
     } catch (error) {
       console.error('Error al registrar justificación:', error);
@@ -245,6 +250,7 @@ const AppProvider = ({ children }) => {
       setIsLoading(false);
     }
   };
+
 
   const agregarEmpleado = async (empleadoData) => {
     setIsLoading(true);

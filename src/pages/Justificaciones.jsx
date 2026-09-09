@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
     CheckCircle, Search, X, Filter, Briefcase, Clock
@@ -9,6 +9,7 @@ const Justificaciones = () => {
     const [selectedEmployee, setSelectedEmployee] = useState('');
     const [selectedDate, setSelectedDate] = useState('');
     const [motivo, setMotivo] = useState('');
+    const [selectedShift, setSelectedShift] = useState('Mañana');
 
     // Estados del combo buscador
     const [personSearch, setPersonSearch] = useState('');
@@ -19,13 +20,28 @@ const Justificaciones = () => {
     const [filterArea, setFilterArea] = useState('');
     const [filterTurno, setFilterTurno] = useState('');
 
+    const selectedEmp = employees.find(e => e.id === selectedEmployee);
+
+    React.useEffect(() => {
+        if (selectedEmp) {
+            if (selectedEmp.turno === 'Doble Turno') {
+                setSelectedShift('Doble Turno (Ambos)');
+            } else if (selectedEmp.turno === 'Tarde') {
+                setSelectedShift('Tarde');
+            } else {
+                setSelectedShift('Mañana');
+            }
+        }
+    }, [selectedEmployee]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        registrarJustificacion(selectedEmployee, selectedDate, motivo);
+        registrarJustificacion(selectedEmployee, selectedDate, motivo, selectedShift);
         setSelectedEmployee('');
         setSelectedDate('');
         setMotivo('');
         setPersonSearch('');
+        setSelectedShift('Mañana');
     };
 
     // Lista filtrada de empleados (por sede/area/turno + búsqueda en el combo)
@@ -41,9 +57,8 @@ const Justificaciones = () => {
         return matchSearch && matchSede && matchArea && matchTurno;
     });
 
-    const selectedEmp = employees.find(e => e.id === selectedEmployee);
-
     // Calcular ausencias reales de los últimos 30 días laborales.
+
     const calcularFaltasPendientes = () => {
         const diasLaborales = config?.diasLaborales || [1, 2, 3, 4, 5];
         const empleadosActivos = employees.filter(e => e.activo);
@@ -121,8 +136,8 @@ const Justificaciones = () => {
                         </div>
                     </div>
 
-                    {/* ── Combo buscador de alumno + fecha ── */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* ── Combo buscador de alumno + turno + fecha ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                         {/* Combo con buscador */}
                         <div className="relative">
@@ -180,6 +195,35 @@ const Justificaciones = () => {
                             <input type="text" value={selectedEmployee} required readOnly className="sr-only" />
                         </div>
 
+                        {/* Selector de Turno a Justificar */}
+                        <div>
+                            <select
+                                value={selectedShift}
+                                onChange={(e) => setSelectedShift(e.target.value)}
+                                className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none bg-white font-medium text-gray-700"
+                            >
+                                {selectedEmp?.turno === 'Doble Turno' ? (
+                                    <>
+                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
+                                        <option value="Mañana">Justificar solo Turno Mañana</option>
+                                        <option value="Tarde">Justificar solo Turno Tarde</option>
+                                    </>
+                                ) : selectedEmp?.turno === 'Tarde' ? (
+                                    <>
+                                        <option value="Tarde">Justificar Turno Tarde</option>
+                                        <option value="Mañana">Justificar Turno Mañana</option>
+                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        <option value="Mañana">Justificar Turno Mañana</option>
+                                        <option value="Tarde">Justificar Turno Tarde</option>
+                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
+                                    </>
+                                )}
+                            </select>
+                        </div>
+
                         {/* Fecha */}
                         <input
                             type="date"
@@ -189,6 +233,7 @@ const Justificaciones = () => {
                             required
                         />
                     </div>
+
 
                     {/* Motivo */}
                     <textarea
