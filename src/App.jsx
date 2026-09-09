@@ -35,10 +35,22 @@ const AppContent = () => {
     };
 
     const handleScanSuccess = async (qrData) => {
-        const employee = employees.find(e => e.qrCode === qrData);
+        if (!qrData) return;
+        const cleanData = String(qrData).trim().toLowerCase();
+        
+        const employee = employees.find(e => {
+            if (!e) return false;
+            const code = String(e.qrCode || '').trim().toLowerCase();
+            const id = String(e.id || '').trim().toLowerCase();
+            return (code && code === cleanData) ||
+                   (id && id === cleanData) ||
+                   (code && cleanData.includes(code)) ||
+                   (id && cleanData.includes(id)) ||
+                   (code && code.includes(cleanData));
+        });
 
         if (!employee) {
-            showToast('Código QR no reconocido', 'error');
+            showToast(`Código QR no reconocido (${String(qrData).slice(0, 15)}...)`, 'error');
             setScannerMode(false);
             return;
         }
@@ -57,6 +69,7 @@ const AppContent = () => {
         // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos
         // setScannerMode(false); 
     };
+
 
     return (
         <>

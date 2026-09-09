@@ -6,7 +6,7 @@ import {
 import { QRScanner } from '../components/attendance/QRScanner';
 
 const Registro = () => {
-    const { employees, attendance, registrarEntrada, config, getCurrentDate, isLoading } = useApp();
+    const { employees, attendance, registrarEntrada, config, getCurrentDate, isLoading, showToast } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [scanMode, setScanMode] = useState(false);
@@ -22,12 +22,28 @@ const Registro = () => {
     );
 
     const handleScan = (qrData) => {
-        const employee = employees.find(e => e.qrCode === qrData);
+        if (!qrData) return;
+        const cleanData = String(qrData).trim().toLowerCase();
+
+        const employee = employees.find(e => {
+            if (!e) return false;
+            const code = String(e.qrCode || '').trim().toLowerCase();
+            const id = String(e.id || '').trim().toLowerCase();
+            return (code && code === cleanData) ||
+                   (id && id === cleanData) ||
+                   (code && cleanData.includes(code)) ||
+                   (id && cleanData.includes(id)) ||
+                   (code && code.includes(cleanData));
+        });
+
         if (employee) {
             setSelectedEmployee(employee);
             setScanMode(false);
+        } else {
+            showToast && showToast(`Código QR no reconocido (${String(qrData).slice(0, 15)}...)`, 'error');
         }
     };
+
 
     // Evaluación de asistencias según el turno (Max 1 o Max 2 para Doble Turno)
     const getEstadoHoy = (employee) => {
