@@ -58,11 +58,21 @@ export const QRScanner = ({ onScanSuccess, onClose, isMultiScan = false }) => {
             const element = document.getElementById("qr-reader");
             if (!element) return;
 
-            // 1. Permiso
+            // 1. Verificación de Contexto Seguro y Permisos de cámara
+            if (!navigator?.mediaDevices?.getUserMedia) {
+                if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    throw new Error('INSECURE_CONTEXT');
+                }
+                throw new Error('NO_CAMERA_SUPPORT');
+            }
+
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode } });
                 stream.getTracks().forEach(track => track.stop());
             } catch (pErr) {
+                if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    throw new Error('INSECURE_CONTEXT');
+                }
                 throw new Error('NOT_ALLOWED');
             }
 
@@ -73,44 +83,59 @@ export const QRScanner = ({ onScanSuccess, onClose, isMultiScan = false }) => {
             
             const qrBoxSize = window.innerWidth < 640 ? 200 : 250;
             const config = {
-                fps: 15,
+                fps: 10,
                 qrbox: { width: qrBoxSize, height: qrBoxSize },
-                aspectRatio: 1.0,
-                videoConstraints: {
-                    facingMode: mode,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                aspectRatio: 1.0
+            };
+
+            const qrSuccessCallback = (decodedText) => {
+                if (mountedRef.current && scannerStateRef.current === 'SCANNING') {
+                    if (cooldown) return;
+
+                    if (isMultiScan) {
+                        setCooldown(true);
+                        setLastScan(decodedText);
+                        onScanSuccess(decodedText);
+                        
+                        setTimeout(() => {
+                            if (mountedRef.current) {
+                                setCooldown(false);
+                                setLastScan(null);
+                            }
+                        }, 2000);
+                    } else {
+                        stopScanner(decodedText);
+                    }
                 }
             };
 
-            await html5QrCodeRef.current.start(
-                { facingMode: mode },
-                config,
-                (decodedText) => {
-                    if (mountedRef.current && scannerStateRef.current === 'SCANNING') {
-                        if (cooldown) return; // Ignorar si estamos en enfriamiento
-
-                        if (isMultiScan) {
-                            // Modo continuo: No detenemos la cámara, solo notificamos
-                            setCooldown(true);
-                            setLastScan(decodedText);
-                            onScanSuccess(decodedText);
-                            
-                            // 2 segundos de pausa antes del siguiente escaneo
-                            setTimeout(() => {
-                                if (mountedRef.current) {
-                                    setCooldown(false);
-                                    setLastScan(null);
-                                }
-                            }, 2000);
-                        } else {
-                            // Modo normal: Detenemos todo
-                            stopScanner(decodedText);
-                        }
-                    }
-                },
-                () => {}
-            );
+            // Intento 1: Usando facingMode (trasera o frontal)
+            try {
+                await html5QrCodeRef.current.start(
+                    { facingMode: mode },
+                    config,
+                    qrSuccessCallback,
+                    () => {}
+                );
+            } catch (modeErr) {
+                console.warn('start facingMode error, attempting camera list fallback:', modeErr);
+                // Intento 2: Fallback buscando lista de dispositivos de cámara
+                const cameras = await Html5Qrcode.getCameras();
+                if (cameras && cameras.length > 0) {
+                    const selectedCamera = mode === 'environment'
+                        ? (cameras.find(c => /back|trasera|rear|environment|posterior/i.test(c.label)) || cameras[cameras.length - 1])
+                        : cameras[0];
+                    
+                    await html5QrCodeRef.current.start(
+                        selectedCamera.id,
+                        config,
+                        qrSuccessCallback,
+                        () => {}
+                    );
+                } else {
+                    throw modeErr;
+                }
+            }
 
             if (mountedRef.current) {
                 scannerStateRef.current = 'SCANNING';
@@ -123,10 +148,17 @@ export const QRScanner = ({ onScanSuccess, onClose, isMultiScan = false }) => {
             console.error('Scan Start Error:', err);
             scannerStateRef.current = 'IDLE';
             let msg = 'Error al acceder a la cámara.';
-            if (err.message === 'NOT_ALLOWED') msg = 'Permiso denegado.';
+            if (err.message === 'INSECURE_CONTEXT') {
+                msg = 'Los celulares bloquean la cámara al acceder por HTTP sin seguridad. Si entras por IP (ej: http://192.168...), debes usar HTTPS o un túnel seguro (ngrok/Cloudflare).';
+            } else if (err.message === 'NOT_ALLOWED') {
+                msg = 'Permiso de cámara denegado en el celular. Habilita el acceso a la cámara en el navegador de tu dispositivo.';
+            } else if (err.message === 'NO_CAMERA_SUPPORT') {
+                msg = 'Tu navegador no soporta el acceso a la cámara.';
+            }
             if (mountedRef.current) setError(msg);
         }
     };
+
 
     const toggleCamera = async () => {
         if (scannerStateRef.current !== 'SCANNING') return;
