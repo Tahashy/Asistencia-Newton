@@ -17,6 +17,39 @@ import Justificaciones from './pages/Justificaciones';
 import Configuracion from './pages/Configuracion';
 import Academico from './pages/Academico';
 
+import * as appsScript from './services/appsScriptService';
+
+export const matchEmployeeQR = (qrData, employeesList) => {
+    if (!qrData || !employeesList || employeesList.length === 0) return null;
+    const raw = String(qrData).trim();
+    const rawLower = raw.toLowerCase();
+    const extractedId = raw.includes('-QR-HASH-') ? raw.split('-QR-HASH-')[0].trim() : raw;
+    const extractedIdLower = extractedId.toLowerCase();
+    const numericOnlyExtracted = extractedId.replace(/\D/g, '');
+
+    return employeesList.find(e => {
+        if (!e) return false;
+        const code = String(e.qrCode || e.qr_code || '').trim();
+        const codeLower = code.toLowerCase();
+        const id = String(e.id || '').trim();
+        const idLower = id.toLowerCase();
+        const numericOnlyId = id.replace(/\D/g, '');
+
+        if (code && (code === raw || codeLower === rawLower)) return true;
+        if (id && (id === raw || idLower === rawLower)) return true;
+        if (id && (id === extractedId || idLower === extractedIdLower)) return true;
+
+        if (numericOnlyExtracted && numericOnlyId && numericOnlyExtracted === numericOnlyId) return true;
+
+        if (code && rawLower.includes(codeLower)) return true;
+        if (id && rawLower.includes(idLower)) return true;
+        if (id && extractedIdLower.includes(idLower)) return true;
+        if (code && codeLower.includes(extractedIdLower)) return true;
+
+        return false;
+    });
+};
+
 const AppContent = () => {
     const {
         currentUser, loginUser, toast, hideToast, employees, attendance,
@@ -36,21 +69,22 @@ const AppContent = () => {
 
     const handleScanSuccess = async (qrData) => {
         if (!qrData) return;
-        const cleanData = String(qrData).trim().toLowerCase();
         
-        const employee = employees.find(e => {
-            if (!e) return false;
-            const code = String(e.qrCode || '').trim().toLowerCase();
-            const id = String(e.id || '').trim().toLowerCase();
-            return (code && code === cleanData) ||
-                   (id && id === cleanData) ||
-                   (code && cleanData.includes(code)) ||
-                   (id && cleanData.includes(id)) ||
-                   (code && code.includes(cleanData));
-        });
+        let employee = matchEmployeeQR(qrData, employees);
 
         if (!employee) {
-            showToast(`Código QR no reconocido (${String(qrData).slice(0, 15)}...)`, 'error');
+            try {
+                const freshEmployees = await appsScript.getEmployees();
+                employee = matchEmployeeQR(qrData, freshEmployees);
+            } catch (err) {
+                console.error("Error al refrescar empleados para QR:", err);
+            }
+        }
+
+        if (!employee) {
+            const raw = String(qrData).trim();
+            const tag = raw.includes('-QR-HASH-') ? raw.split('-QR-HASH-')[0] : raw.slice(0, 15);
+            showToast(`Código QR no reconocido (${tag})`, 'error');
             setScannerMode(false);
             return;
         }
@@ -69,6 +103,7 @@ const AppContent = () => {
         // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos
         // setScannerMode(false); 
     };
+
 
 
     return (

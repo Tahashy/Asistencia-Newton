@@ -5,6 +5,9 @@ import {
 } from 'lucide-react';
 import { QRScanner } from '../components/attendance/QRScanner';
 
+import { matchEmployeeQR } from '../App';
+import * as appsScript from '../services/appsScriptService';
+
 const Registro = () => {
     const { employees, attendance, registrarEntrada, config, getCurrentDate, isLoading, showToast } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
@@ -21,28 +24,30 @@ const Registro = () => {
         )
     );
 
-    const handleScan = (qrData) => {
+    const handleScan = async (qrData) => {
         if (!qrData) return;
-        const cleanData = String(qrData).trim().toLowerCase();
+        
+        let employee = matchEmployeeQR(qrData, employees);
 
-        const employee = employees.find(e => {
-            if (!e) return false;
-            const code = String(e.qrCode || '').trim().toLowerCase();
-            const id = String(e.id || '').trim().toLowerCase();
-            return (code && code === cleanData) ||
-                   (id && id === cleanData) ||
-                   (code && cleanData.includes(code)) ||
-                   (id && cleanData.includes(id)) ||
-                   (code && code.includes(cleanData));
-        });
+        if (!employee) {
+            try {
+                const freshEmployees = await appsScript.getEmployees();
+                employee = matchEmployeeQR(qrData, freshEmployees);
+            } catch (err) {
+                console.error("Error al refrescar empleados para QR:", err);
+            }
+        }
 
         if (employee) {
             setSelectedEmployee(employee);
             setScanMode(false);
         } else {
-            showToast && showToast(`Código QR no reconocido (${String(qrData).slice(0, 15)}...)`, 'error');
+            const raw = String(qrData).trim();
+            const tag = raw.includes('-QR-HASH-') ? raw.split('-QR-HASH-')[0] : raw.slice(0, 15);
+            showToast && showToast(`Código QR no reconocido (${tag})`, 'error');
         }
     };
+
 
 
     // Evaluación de asistencias según el turno (Max 1 o Max 2 para Doble Turno)
