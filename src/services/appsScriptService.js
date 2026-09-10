@@ -210,12 +210,23 @@ export const addAttendance = async (payload) => {
   const horaEntradaTurno = emp?.turnos?.hora_entrada;
   const [hReal] = timeStr.split(':').map(Number);
 
-  const totalHoy = existingRecords ? existingRecords.length : 0;
+  const lastRecord = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
   const esDobleTurno = nombreTurno === 'Doble Turno';
-  const maxPermitidos = esDobleTurno ? 2 : 1;
 
-  // Si ya alcanzó el número máximo de asistencias del día
-  if (totalHoy >= maxPermitidos) {
+  // Si ya tiene un registro de asistencia hoy:
+  if (lastRecord) {
+    // Si es Doble Turno y aún no se ha registrado la entrada de la tarde (guardada en hora_salida):
+    if (esDobleTurno && (!lastRecord.hora_salida || lastRecord.hora_salida === '' || lastRecord.hora_salida === '-')) {
+      const { error } = await supabase
+        .from('asistencias')
+        .update({ hora_salida: timeStr })
+        .eq('id', lastRecord.id);
+
+      if (error) return handleResponse(error);
+      return { success: true, data: { action: 'ENTRADA' } };
+    }
+
+    // Si no es Doble Turno o ya completó las 2 asistencias del día:
     return {
       success: false,
       error: esDobleTurno
@@ -224,13 +235,9 @@ export const addAttendance = async (payload) => {
     };
   }
 
-  // === LÓGICA DE CÁLCULO DE ESTADO ===
+  // === 1ª ASISTENCIA DEL DÍA (O TURNO ÚNICO) ===
   let estadoAsistencia = 'Presente';
-  
-  // En la 2ª asistencia de Doble Turno o Turno Tarde, NO existe tardanza (siempre es 'Presente')
-  const esTardeDobleTurno = esDobleTurno && (hReal >= 12 || totalHoy === 1);
-  const turnoSinTardanza = nombreTurno === 'Tarde' || esTardeDobleTurno;
-
+  const turnoSinTardanza = nombreTurno === 'Tarde';
 
   if (!turnoSinTardanza) {
     // Para Turno Mañana y la Mañana del Doble Turno: se respeta el horario de configuración y la tolerancia
@@ -263,6 +270,7 @@ export const addAttendance = async (payload) => {
   if (error) return handleResponse(error);
   return { success: true, data: { action: 'ENTRADA' } };
 };
+
 
 export const saveJustification = async (payload) => {
   const { employeeId, fecha, justificacion, registradoPor } = payload;

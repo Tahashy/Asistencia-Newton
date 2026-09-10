@@ -92,13 +92,18 @@ const AppContent = () => {
         const hoy = getCurrentDate();
         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
         const esDobleTurno = employee.turno === 'Doble Turno';
-        const maxRegistros = esDobleTurno ? 2 : 1;
+        const reg = registrosHoy[0];
 
-        if (registrosHoy.length >= maxRegistros) {
-            showToast(`${employee.nombre} ya completó sus asistencias de hoy (${registrosHoy.length}/${maxRegistros})`, 'info');
+        const yaCompleto = esDobleTurno
+            ? Boolean(reg && reg.horaSalida && reg.horaSalida !== '-')
+            : Boolean(registrosHoy.length > 0);
+
+        if (yaCompleto) {
+            showToast(`${employee.nombre} ya completó sus asistencias de hoy`, 'info');
         } else {
             await registrarEntrada(employee.id, 'QR');
         }
+
 
         // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos
         // setScannerMode(false); 

@@ -56,15 +56,19 @@ const Registro = () => {
         const hoy = getCurrentDate();
         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
         const esDobleTurno = employee.turno === 'Doble Turno';
-        const maxRegistros = esDobleTurno ? 2 : 1;
+        const reg = registrosHoy[0];
 
-        if (registrosHoy.length === 0) {
-            return { estado: 'SIN_REGISTRO', count: 0, max: maxRegistros, esDobleTurno };
+        if (!reg) {
+            return { estado: 'SIN_REGISTRO', count: 0, max: esDobleTurno ? 2 : 1, esDobleTurno };
         }
-        if (registrosHoy.length < maxRegistros) {
-            return { estado: 'TURNO_PENDIENTE', count: registrosHoy.length, max: maxRegistros, esDobleTurno, registros: registrosHoy };
+
+        const tieneSegundoTurno = Boolean(reg.horaSalida && reg.horaSalida !== '-');
+
+        if (esDobleTurno && !tieneSegundoTurno) {
+            return { estado: 'TURNO_PENDIENTE', count: 1, max: 2, esDobleTurno, registro: reg, registros: [reg] };
         }
-        return { estado: 'YA_REGISTRADO', count: registrosHoy.length, max: maxRegistros, esDobleTurno, registros: registrosHoy };
+
+        return { estado: 'YA_REGISTRADO', count: esDobleTurno ? 2 : 1, max: esDobleTurno ? 2 : 1, esDobleTurno, registro: reg, registros: [reg] };
     };
 
     const estadoHoy = getEstadoHoy(selectedEmployee);
@@ -109,9 +113,12 @@ const Registro = () => {
                         const hoy = getCurrentDate();
                         const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
                         const esDobleTurno = employee.turno === 'Doble Turno';
-                        const maxRegistros = esDobleTurno ? 2 : 1;
-                        const yaCompleto = registrosHoy.length >= maxRegistros;
-                        const esParcial = esDobleTurno && registrosHoy.length === 1;
+                        const reg = registrosHoy[0];
+                        const tieneEntrada = Boolean(reg);
+                        const tieneSegunda = Boolean(reg?.horaSalida && reg?.horaSalida !== '-');
+
+                        const yaCompleto = esDobleTurno ? tieneSegunda : tieneEntrada;
+                        const esParcial = esDobleTurno && tieneEntrada && !tieneSegunda;
 
                         return (
                             <div
@@ -161,7 +168,7 @@ const Registro = () => {
                             <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
                             <div>
                                 <p className="text-sm font-bold text-amber-800">
-                                    1ª Asistencia (Mañana) registrada a las {estadoHoy.registros?.[0]?.horaEntrada || '-'}
+                                    1ª Asistencia (Mañana) registrada a las {estadoHoy.registro?.horaEntrada || '-'}
                                 </p>
                                 <p className="text-xs text-amber-700">Falta registrar la 2ª Asistencia del Turno Tarde.</p>
                             </div>
@@ -178,13 +185,14 @@ const Registro = () => {
                                 </p>
                                 <p className="text-xs text-green-700">
                                     {estadoHoy.esDobleTurno
-                                        ? `1º Turno: ${estadoHoy.registros?.[0]?.horaEntrada || '-'} · 2º Turno: ${estadoHoy.registros?.[1]?.horaEntrada || '-'}`
-                                        : `Entrada: ${estadoHoy.registros?.[0]?.horaEntrada || '-'}`
+                                        ? `1º Turno: ${estadoHoy.registro?.horaEntrada || '-'} · 2º Turno: ${estadoHoy.registro?.horaSalida || '-'}`
+                                        : `Entrada: ${estadoHoy.registro?.horaEntrada || '-'}`
                                     }
                                 </p>
                             </div>
                         </div>
                     )}
+
 
                     {/* Botón de entrada */}
                     <button
