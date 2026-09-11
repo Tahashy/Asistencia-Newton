@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2, Camera, Search, Filter
+    Plus, Save, Download, QrCode, Eye, X, Mail, Phone, MapPin, Briefcase, Edit, UserPlus, RefreshCw, Trash2, Camera, Search, Filter, Upload
 } from 'lucide-react';
 import QRCode from '../components/ui/QRCode';
 import Pagination from '../components/ui/Pagination';
+import * as XLSX from 'xlsx';
 
 const Personal = () => {
-    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading, eliminarTodo } = useApp();
+    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading, eliminarTodo, showToast } = useApp();
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
@@ -24,6 +26,115 @@ const Personal = () => {
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(7);
+
+    // Ref e importación/exportación Excel/CSV
+    const fileInputRef = useRef(null);
+    const [isImporting, setIsImporting] = useState(false);
+
+    // Exportar Lista de Personal a Excel / CSV
+    const handleExportPersonal = () => {
+        if (!employees || employees.length === 0) {
+            showToast && showToast('No hay personal registrado para exportar', 'warning');
+            return;
+        }
+
+        const dataToExport = employees.map(emp => ({
+            'ID': emp.id || '',
+            'Nombre': emp.nombre || '',
+            'Apellido': emp.apellido || '',
+            'Área': emp.area || '',
+            'Sede': emp.sede || '',
+            'Teléfono': emp.telefono || '',
+            'Email': emp.email || '',
+            'Turno': emp.turno || 'Mañana',
+            'Cargo': emp.cargo || '',
+            'Código QR': emp.qrCode || ''
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Personal");
+        
+        const fecha = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(workbook, `Respaldo_Personal_${fecha}.xlsx`);
+        showToast && showToast('Lista de personal exportada a Excel correctamente', 'success');
+    };
+
+    // Importación masiva desde Excel / CSV
+    const handleImportExcel = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsImporting(true);
+        const reader = new FileReader();
+
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const workbook = XLSX.read(bstr, { type: 'binary' });
+                const wsname = workbook.SheetNames[0];
+                const ws = workbook.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+                if (!data || data.length === 0) {
+                    showToast && showToast('El archivo está vacío o no se reconoció el formato', 'error');
+                    setIsImporting(false);
+                    return;
+                }
+
+                let exitoCount = 0;
+                for (const item of data) {
+                    const getVal = (keys) => {
+                        const foundKey = Object.keys(item).find(k => 
+                            keys.some(key => k.trim().toLowerCase().replace(/[áéíóú]/g, m => ({á:'a',é:'e',í:'i',ó:'o',ú:'u'}[m])) === key.toLowerCase())
+                        );
+                        return foundKey ? String(item[foundKey]).trim() : '';
+                    };
+
+                    const nombre = getVal(['nombre', 'nombres', 'name']);
+                    const apellido = getVal(['apellido', 'apellidos', 'lastname']);
+                    
+                    if (!nombre && !apellido) continue;
+
+                    const area = getVal(['area', 'área']);
+                    const sede = getVal(['sede', 'sedes']);
+                    const telefono = getVal(['telefono', 'teléfono', 'celular', 'phone']);
+                    const email = getVal(['email', 'correo', 'mail']);
+                    const cargo = getVal(['cargo', 'puesto']);
+                    const turno = getVal(['turno', 'turnos']) || 'Mañana';
+
+                    const empData = {
+                        nombre,
+                        apellido,
+                        area,
+                        sede,
+                        telefono,
+                        email,
+                        cargo,
+                        turno
+                    };
+
+                    const res = await agregarEmpleado(empData);
+                    if (res?.success) exitoCount++;
+                }
+
+                if (exitoCount > 0) {
+                    showToast && showToast(`¡Se importaron ${exitoCount} registros correctamente!`, 'success');
+                } else {
+                    showToast && showToast('No se pudieron importar registros. Revisa que el archivo contenga las columnas Nombre y Apellido.', 'warning');
+                }
+            } catch (err) {
+                console.error("Error al procesar el archivo Excel:", err);
+                showToast && showToast("Error al procesar el archivo. Asegúrate que sea .xlsx o .csv válido", "error");
+            } finally {
+                setIsImporting(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+
+        reader.readAsBinaryString(file);
+    };
+
 
     const [formData, setFormData] = useState({
         id: '',
@@ -143,17 +254,39 @@ const Personal = () => {
                         {employees.length} {employees.length === 1 ? (config?.nombreEntidadSingular || 'registro') : (config?.nombreEntidadPlural?.toLowerCase() || 'registros')} registrados
                     </p>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-3">
-                    {/* BOTON DE PELIGRO - VACIAR TODO */}
+                <div className="flex flex-wrap sm:flex-nowrap gap-3">
+                    {/* INPUT OCULTO PARA SUBIR ARCHIVO EXCEL */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImportExcel}
+                        accept=".xlsx, .xls, .csv"
+                        className="hidden"
+                    />
+
+
+                    {/* BOTON EXPORTAR PERSONAL */}
                     <button
-                        onClick={() => setIsDeletingAll(true)}
-                        className="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all border border-red-200 active:scale-95"
-                        title="Purgar o Vaciar el sistema por completo"
+                        onClick={handleExportPersonal}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all border border-emerald-200 active:scale-95"
+                        title="Descargar lista completa en Excel/CSV"
                     >
-                        <Trash2 className="w-5 h-5" />
-                        <span className="hidden xl:inline">Resetear Sistema</span>
+                        <Download className="w-5 h-5 text-emerald-600" />
+                        <span>Exportar Lista</span>
                     </button>
 
+                    {/* BOTON IMPORTAR EXCEL */}
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isImporting}
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg shadow-purple-200 active:scale-95 disabled:opacity-50"
+                        title="Importar lista masiva desde Excel (.xlsx, .csv)"
+                    >
+                        <Upload className="w-5 h-5" />
+                        <span>{isImporting ? 'Importando...' : 'Importar Excel'}</span>
+                    </button>
+
+                    {/* BOTON AÑADIR PERSONAL */}
                     <button
                         onClick={() => { resetForm(); setIsModalOpen(true); }}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg shadow-blue-200 active:scale-95"
@@ -162,6 +295,7 @@ const Personal = () => {
                         Añadir {config?.nombreEntidadSingular || 'Personal'}
                     </button>
                 </div>
+
             </div>
 
             {/* TABLA DE PERSONAL */}

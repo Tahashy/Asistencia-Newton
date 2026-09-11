@@ -14,22 +14,12 @@ const AppProvider = ({ children }) => {
   const [academicRecords, setAcademicRecords] = useState([]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (error) {
-        localStorage.removeItem('currentUser');
-      }
-    }
+    // Al abrir o recargar la aplicación, siempre obligar a mostrar la pantalla de Login primero
+    localStorage.removeItem('currentUser');
+    setCurrentUser(null);
+    loadInitialData();
   }, []);
 
-  useEffect(() => {
-    // Solo cargar datos cuando hay un usuario autenticado.
-    // Sin este guard, también se disparaba al hacer logout (currentUser → null).
-    if (!currentUser) return;
-    loadInitialData();
-  }, [currentUser]);
 
 
 
@@ -72,8 +62,6 @@ const AppProvider = ({ children }) => {
 
       if (result.success) {
         setCurrentUser(result.data);
-        // Guardar en localStorage
-        localStorage.setItem('currentUser', JSON.stringify(result.data));
         showToast('Inicio de sesión exitoso', 'success');
         return { success: true };
       } else {
