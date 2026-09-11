@@ -14,9 +14,15 @@ const AppProvider = ({ children }) => {
   const [academicRecords, setAcademicRecords] = useState([]);
 
   useEffect(() => {
-    // Al abrir o recargar la aplicación, siempre obligar a mostrar la pantalla de Login primero
-    localStorage.removeItem('currentUser');
-    setCurrentUser(null);
+    // Restaurar usuario logueado desde localStorage si existe sesión previa activa
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('currentUser');
+      }
+    }
     loadInitialData();
   }, []);
 
@@ -62,6 +68,7 @@ const AppProvider = ({ children }) => {
 
       if (result.success) {
         setCurrentUser(result.data);
+        localStorage.setItem('currentUser', JSON.stringify(result.data));
         showToast('Inicio de sesión exitoso', 'success');
         return { success: true };
       } else {
