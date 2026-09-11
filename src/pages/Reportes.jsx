@@ -13,6 +13,7 @@ const Reportes = () => {
     const [selectedEmployee, setSelectedEmployee] = useState('');
     const [selectedArea, setSelectedArea] = useState('');
     const [selectedSede, setSelectedSede] = useState('');
+    const [selectedTurno, setSelectedTurno] = useState('');
     const [dateRange, setDateRange] = useState({ inicio: '', fin: '' });
     const [personSearch, setPersonSearch] = useState('');
     const [comboOpen, setComboOpen] = useState(false);
@@ -144,11 +145,12 @@ _Reporte generado automáticamente._`.trim();
             baseRecords = baseRecords.filter(a => a.employeeId === selectedEmployee);
         }
 
-        if (selectedArea || selectedSede) {
+        if (selectedArea || selectedSede || selectedTurno) {
             const matchingEmployeeIds = activeEmployees
                 .filter(emp =>
                     (!selectedArea || emp.area === selectedArea) &&
-                    (!selectedSede || emp.sede === selectedSede)
+                    (!selectedSede || emp.sede === selectedSede) &&
+                    (!selectedTurno || emp.turno === selectedTurno)
                 )
                 .map(emp => emp.id);
             baseRecords = baseRecords.filter(a => matchingEmployeeIds.includes(a.employeeId));
@@ -176,7 +178,8 @@ _Reporte generado automáticamente._`.trim();
                     ? activeEmployees.filter(e => e.id === selectedEmployee)
                     : activeEmployees.filter(e => 
                         (!selectedArea || e.area === selectedArea) && 
-                        (!selectedSede || e.sede === selectedSede)
+                        (!selectedSede || e.sede === selectedSede) &&
+                        (!selectedTurno || e.turno === selectedTurno)
                     );
 
                 empsToCheck.forEach(emp => {
@@ -202,7 +205,8 @@ _Reporte generado automáticamente._`.trim();
                 ? activeEmployees.filter(e => e.id === selectedEmployee)
                 : activeEmployees.filter(e => 
                     (!selectedArea || e.area === selectedArea) && 
-                    (!selectedSede || e.sede === selectedSede)
+                    (!selectedSede || e.sede === selectedSede) &&
+                    (!selectedTurno || e.turno === selectedTurno)
                 );
 
             empsToCheck.forEach(emp => {
@@ -241,7 +245,7 @@ _Reporte generado automáticamente._`.trim();
         };
     };
 
-    const data = (selectedEmployee || selectedArea || selectedSede || dateRange.inicio || dateRange.fin) ? getFilteredData() : null;
+    const data = (selectedEmployee || selectedArea || selectedSede || selectedTurno || dateRange.inicio || dateRange.fin) ? getFilteredData() : null;
 
     // Lógica de Paginación para los registros
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -260,6 +264,7 @@ _Reporte generado automáticamente._`.trim();
                 'ID': r.employeeId,
                 'Área': emp?.area || '-',
                 'Sede': emp?.sede || '-',
+                'Turno': emp?.turno || '-',
                 'Fecha': formatFecha(r.fecha),
                 'Entrada': formatHora(r.horaEntrada),
                 'Salida': formatHora(r.horaSalida),
@@ -417,8 +422,8 @@ _Reporte generado automáticamente._`.trim();
                         </div>
                     </div>
 
-                    {/* Segunda fila: Área y Sede */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Segunda fila: Área, Sede y Turno */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Filtrar por Área</label>
                             <select
@@ -442,6 +447,19 @@ _Reporte generado automáticamente._`.trim();
                                 <option value="">Todas las sedes</option>
                                 {config?.sedes?.map((sede, index) => (
                                     <option key={index} value={sede}>{sede}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Filtrar por Turno</label>
+                            <select
+                                value={selectedTurno}
+                                onChange={(e) => { setSelectedTurno(e.target.value); setCurrentPage(1); }}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-none transition-all"
+                            >
+                                <option value="">Todos los turnos</option>
+                                {config?.turnos?.map((turno, index) => (
+                                    <option key={index} value={turno.nombre || turno}>{turno.nombre || turno}</option>
                                 ))}
                             </select>
                         </div>
