@@ -469,8 +469,22 @@ const AppProvider = ({ children }) => {
     const hoyEsLaboral = esDiaLaboral(hoy);
     const registrosHoy = attendance.filter(a => normalizar(a.fecha) === hoy);
 
-    const presentes = registrosHoy.filter(a => a.estado?.toLowerCase() === 'presente').length;
-    const tardanzas = registrosHoy.filter(a => a.estado?.toLowerCase() === 'tardanza').length;
+    const employeeIdsPresentes = new Set();
+    const employeeIdsTardanzas = new Set();
+    
+    registrosHoy.forEach(a => {
+        if (a.estado?.toLowerCase() === 'tardanza') {
+            employeeIdsTardanzas.add(a.employeeId);
+            employeeIdsPresentes.delete(a.employeeId); // Prioridad a la tardanza en el dashboard
+        } else if (a.estado?.toLowerCase() === 'presente') {
+            if (!employeeIdsTardanzas.has(a.employeeId)) {
+                employeeIdsPresentes.add(a.employeeId);
+            }
+        }
+    });
+
+    const presentes = employeeIdsPresentes.size;
+    const tardanzas = employeeIdsTardanzas.size;
 
     // Solo contar ausentes si hoy es un día laboral Y ya pasó la hora de inicio del turno del empleado
     const ahora = new Date();
@@ -544,10 +558,10 @@ const AppProvider = ({ children }) => {
       const fechaStr = normalizar(fecha);
 
       const registrosDia = attendance.filter(a => normalizar(a.fecha) === fechaStr);
-      const presentes = registrosDia.filter(a => {
+      const presentes = new Set(registrosDia.filter(a => {
         const st = a.estado?.toLowerCase();
         return st === 'presente' || st === 'tardanza';
-      }).length;
+      }).map(a => a.employeeId)).size;
       const totalAtThatDate = employees.filter(e => e.activo && (e.fechaCreacion || '0') <= fechaStr).length || employees.filter(e => e.activo).length;
 
       const porcentaje = totalAtThatDate > 0 ? Math.round((presentes / totalAtThatDate) * 100) : 0;

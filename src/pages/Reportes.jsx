@@ -93,17 +93,26 @@ const Reportes = () => {
             star: String.fromCodePoint(0x2728)
         };
 
-        const incidencias = data.records
-            .filter(r => r.estado !== 'Presente')
-            .slice(0, 10);
+        const incidencias = [];
+        data.records.forEach(r => {
+            const emp = employees.find(e => e.id === r.employeeId);
+            if (emp?.turno === 'Doble Turno') {
+                if (r.manana?.estado !== 'Presente') incidencias.push({ fecha: r.fecha, estado: r.manana.estado, hora: r.manana.hora, turno: 'Mañana' });
+                if (r.tarde?.estado !== 'Presente') incidencias.push({ fecha: r.fecha, estado: r.tarde.estado, hora: r.tarde.hora, turno: 'Tarde' });
+            } else {
+                if (r.unico?.estado !== 'Presente') incidencias.push({ fecha: r.fecha, estado: r.unico?.estado, hora: r.unico?.hora, turno: '' });
+            }
+        });
+        const topIncidencias = incidencias.slice(0, 10);
 
         let detString = '';
-        if (incidencias.length > 0) {
+        if (topIncidencias.length > 0) {
             detString = '\n\n*DETALLE DE INCIDENCIAS:*\n' + 
-                incidencias.map(r => {
+                topIncidencias.map(r => {
                     const icon = r.estado === 'Tardanza' ? i.wait : i.error;
-                    const time = r.estado === 'Tardanza' ? ` (${formatHora(r.horaEntrada)})` : '';
-                    return `${icon} ${formatFecha(r.fecha)}: ${r.estado}${time}`;
+                    const time = r.estado === 'Tardanza' ? ` (${formatHora(r.hora)})` : '';
+                    const turnoTxt = r.turno ? ` [${r.turno}]` : '';
+                    return `${icon} ${formatFecha(r.fecha)}${turnoTxt}: ${r.estado}${time}`;
                 }).join('\n');
         } else {
             detString = `\n\n${i.star} *¡Excelente! Sin faltas ni tardanzas.*`;
@@ -138,109 +147,99 @@ _Reporte generado automáticamente._`.trim();
 
     const getFilteredData = () => {
         const activeEmployees = employees.filter(e => e.activo);
-        let baseRecords = [...attendance];
-
-        // 1. Filtrar registros existentes por criterios básicos
-        if (selectedEmployee) {
-            baseRecords = baseRecords.filter(a => a.employeeId === selectedEmployee);
-        }
-
-        if (selectedArea || selectedSede || selectedTurno) {
-            const matchingEmployeeIds = activeEmployees
-                .filter(emp =>
-                    (!selectedArea || emp.area === selectedArea) &&
-                    (!selectedSede || emp.sede === selectedSede) &&
-                    (!selectedTurno || emp.turno === selectedTurno)
-                )
-                .map(emp => emp.id);
-            baseRecords = baseRecords.filter(a => matchingEmployeeIds.includes(a.employeeId));
-        }
-
-        // 2. Determinar Rango de Fechas
-        const hoy = new Date().toISOString().split('T')[0];
-        const inicio = dateRange.inicio || hoy;
-        const fin = dateRange.fin || hoy;
-
-        // 3. INYECCIÓN DE FALTAS (Solo si hay un filtro de fecha o persona)
-        // Para simplificar, si se filtra por un rango, aseguramos que cada empleado tenga un registro CADA DÍA
-        const enrichedRecords = [...baseRecords];
         
-        // Si el filtro de fechas está activo, buscamos huecos
-        if (dateRange.inicio && dateRange.fin) {
-            const start = new Date(dateRange.inicio + 'T00:00:00');
-            const end = new Date(dateRange.fin + 'T00:00:00');
-            
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const dayStr = d.toISOString().split('T')[0];
-                
-                // Solo inyectamos faltas para el personal filtrado (o todos si no hay filtro)
-                const empsToCheck = selectedEmployee 
-                    ? activeEmployees.filter(e => e.id === selectedEmployee)
-                    : activeEmployees.filter(e => 
-                        (!selectedArea || e.area === selectedArea) && 
-                        (!selectedSede || e.sede === selectedSede) &&
-                        (!selectedTurno || e.turno === selectedTurno)
-                    );
-
-                empsToCheck.forEach(emp => {
-                    const hasRecord = baseRecords.find(r => r.employeeId === emp.id && r.fecha === dayStr);
-                    if (!hasRecord) {
-                        enrichedRecords.push({
-                            id: `V-FALTA-${emp.id}-${dayStr}`,
-                            employeeId: emp.id,
-                            fecha: dayStr,
-                            horaEntrada: '',
-                            horaSalida: '',
-                            estado: 'Falta',
-                            metodoRegistro: '-',
-                            virtual: true
-                        });
-                    }
-                });
-            }
-        } else if (dateRange.inicio || dateRange.fin) {
-            // Caso de fecha única
-            const targetDate = dateRange.inicio || dateRange.fin;
-            const empsToCheck = selectedEmployee 
-                ? activeEmployees.filter(e => e.id === selectedEmployee)
-                : activeEmployees.filter(e => 
-                    (!selectedArea || e.area === selectedArea) && 
-                    (!selectedSede || e.sede === selectedSede) &&
-                    (!selectedTurno || e.turno === selectedTurno)
-                );
-
-            empsToCheck.forEach(emp => {
-                const hasRecord = baseRecords.find(r => r.employeeId === emp.id && r.fecha === targetDate);
-                if (!hasRecord) {
-                    enrichedRecords.push({
-                        id: `V-FALTA-${emp.id}-${targetDate}`,
-                        employeeId: emp.id,
-                        fecha: targetDate,
-                        horaEntrada: '',
-                        horaSalida: '',
-                        estado: 'Falta',
-                        metodoRegistro: '-',
-                        virtual: true
-                    });
-                }
-            });
+        let empsToCheck = activeEmployees;
+        if (selectedEmployee) {
+            empsToCheck = empsToCheck.filter(e => e.id === selectedEmployee);
+        } else if (selectedArea || selectedSede || selectedTurno) {
+            empsToCheck = empsToCheck.filter(emp =>
+                (!selectedArea || emp.area === selectedArea) &&
+                (!selectedSede || emp.sede === selectedSede) &&
+                (!selectedTurno || emp.turno === selectedTurno)
+            );
         }
 
-        // 4. Filtrar por rango final (por seguridad)
-        let finalRecords = enrichedRecords;
-        if (dateRange.inicio) finalRecords = finalRecords.filter(a => a.fecha >= dateRange.inicio);
-        if (dateRange.fin) finalRecords = finalRecords.filter(a => a.fecha <= dateRange.fin);
+        const hoy = new Date().toISOString().split('T')[0];
+        const inicio = dateRange.inicio || (selectedEmployee || selectedArea || selectedSede || selectedTurno ? '' : hoy);
+        const fin = dateRange.fin || inicio || hoy;
 
-        const presentes = finalRecords.filter(r => r.estado === 'Presente').length;
-        const tardanzas = finalRecords.filter(r => r.estado === 'Tardanza').length;
-        const faltas = finalRecords.filter(r => r.estado === 'Falta' || r.estado === 'Falta Justificada').length;
-        const total = finalRecords.length || 0;
+        const dateList = [];
+        if (inicio && fin) {
+            const start = new Date(inicio + 'T00:00:00');
+            const end = new Date(fin + 'T00:00:00');
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                dateList.push(d.toISOString().split('T')[0]);
+            }
+        } else if (inicio) {
+            dateList.push(inicio);
+        }
 
+        const recordsMap = new Map();
+        attendance.forEach(a => {
+            const key = `${a.employeeId}_${a.fecha}`;
+            if (!recordsMap.has(key)) recordsMap.set(key, { manana: null, tarde: null, unico: null });
+            const dayRecord = recordsMap.get(key);
+            const emp = employees.find(e => e.id === a.employeeId);
+            
+            if (emp?.turno === 'Doble Turno') {
+                if (a.horaSalida && a.horaSalida !== '-') {
+                    dayRecord.manana = { hora: a.horaEntrada, estado: a.estado };
+                    dayRecord.tarde = { hora: a.horaSalida, estado: 'Presente' };
+                } else {
+                    const h = parseInt(a.horaEntrada?.split(':')[0] || 0);
+                    if (h < 13) dayRecord.manana = { hora: a.horaEntrada, estado: a.estado };
+                    else dayRecord.tarde = { hora: a.horaEntrada, estado: a.estado };
+                }
+            } else {
+                dayRecord.unico = { hora: a.horaEntrada, estado: a.estado };
+            }
+        });
+
+        const finalRecords = [];
+        let presentes = 0, tardanzas = 0, faltas = 0;
+
+        empsToCheck.forEach(emp => {
+            const daysToProcess = dateList.length > 0 ? dateList : [...new Set(attendance.filter(a => a.employeeId === emp.id).map(a => a.fecha))];
+            
+            daysToProcess.forEach(fecha => {
+                const key = `${emp.id}_${fecha}`;
+                const raw = recordsMap.get(key) || { manana: null, tarde: null, unico: null };
+                
+                const rec = { id: key, employeeId: emp.id, fecha, turno: emp.turno };
+                
+                if (emp.turno === 'Doble Turno') {
+                    rec.manana = raw.manana || { hora: '-', estado: 'Falta' };
+                    rec.tarde = raw.tarde || { hora: '-', estado: 'Falta' };
+                    
+                    if (rec.manana.estado === 'Presente') presentes++;
+                    if (rec.manana.estado === 'Tardanza') tardanzas++;
+                    if (rec.manana.estado.startsWith('Falta')) faltas++;
+                    
+                    if (rec.tarde.estado === 'Presente') presentes++;
+                    if (rec.tarde.estado === 'Tardanza') tardanzas++;
+                    if (rec.tarde.estado.startsWith('Falta')) faltas++;
+                } else {
+                    rec.unico = raw.unico || { hora: '-', estado: 'Falta' };
+                    if (rec.unico.estado === 'Presente') presentes++;
+                    if (rec.unico.estado === 'Tardanza') tardanzas++;
+                    if (rec.unico.estado.startsWith('Falta')) faltas++;
+                }
+                
+                // Si no buscamos fechas específicas y es falta, lo ignoramos para no ensuciar el reporte general
+                if (dateList.length === 0 && ((emp.turno === 'Doble Turno' && rec.manana.estado.startsWith('Falta') && rec.tarde.estado.startsWith('Falta')) || (emp.turno !== 'Doble Turno' && rec.unico.estado.startsWith('Falta')))) {
+                    return;
+                }
+
+                finalRecords.push(rec);
+            });
+        });
+
+        finalRecords.sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || a.employeeId.localeCompare(b.employeeId));
+        
+        const total = presentes + tardanzas + faltas;
         return {
-            records: finalRecords.sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || a.employeeId.localeCompare(b.employeeId)),
-            presentes,
-            tardanzas,
-            faltas,
+            records: finalRecords,
+            presentes, tardanzas, faltas,
             porcentaje: total > 0 ? Math.round(((presentes + tardanzas) / total) * 100) : 0
         };
     };
@@ -253,23 +252,48 @@ _Reporte generado automáticamente._`.trim();
     const currentRecords = data?.records?.slice(indexOfFirstItem, indexOfLastItem) || [];
     const totalPages = data ? Math.ceil(data.records.length / itemsPerPage) : 0;
 
+    const isTardeShift = (turno) => turno && turno !== 'Doble Turno' && turno.toLowerCase().includes('tarde');
+
+    // Determinar qué columnas mostrar basándonos en los datos actuales
+    const hasMañana = data?.records?.some(r => {
+        const emp = employees.find(e => e.id === r.employeeId);
+        return emp?.turno === 'Doble Turno' || !isTardeShift(emp?.turno);
+    }) ?? true;
+
+    const hasTarde = data?.records?.some(r => {
+        const emp = employees.find(e => e.id === r.employeeId);
+        return emp?.turno === 'Doble Turno' || isTardeShift(emp?.turno);
+    }) ?? false;
+
     // FUNCIONES DE EXPORTACIÓN
     const exportToExcel = () => {
         if (!data || data.records.length === 0) return;
 
         const worksheetData = data.records.map(r => {
             const emp = employees.find(e => e.id === r.employeeId);
-            return {
+            const isDoble = emp?.turno === 'Doble Turno';
+            const isTarde = isTardeShift(emp?.turno);
+            
+            const row = {
                 'Nombre y Apellido': `${emp?.nombre} ${emp?.apellido}`,
                 'ID': r.employeeId,
                 'Área': emp?.area || '-',
                 'Sede': emp?.sede || '-',
                 'Turno': emp?.turno || '-',
-                'Fecha': formatFecha(r.fecha),
-                'Entrada': formatHora(r.horaEntrada),
-                'Salida': formatHora(r.horaSalida),
-                'Estado': r.estado
+                'Fecha': formatFecha(r.fecha)
             };
+            
+            if (hasMañana) {
+                row['Turno Mañana (Hora)'] = isDoble ? formatHora(r.manana?.hora) : (!isTarde ? formatHora(r.unico?.hora) : '-');
+                row['Turno Mañana (Estado)'] = isDoble ? r.manana?.estado : (!isTarde ? (r.unico?.estado || '-') : '-');
+            }
+            
+            if (hasTarde) {
+                row['Turno Tarde (Hora)'] = isDoble ? formatHora(r.tarde?.hora) : (isTarde ? formatHora(r.unico?.hora) : '-');
+                row['Turno Tarde (Estado)'] = isDoble ? r.tarde?.estado : (isTarde ? (r.unico?.estado || '-') : '-');
+            }
+            
+            return row;
         });
 
         const worksheet = XLSX.utils.json_to_sheet(worksheetData);
@@ -282,36 +306,44 @@ _Reporte generado automáticamente._`.trim();
         if (!data || data.records.length === 0) return;
 
         const doc = new jsPDF();
-
-        // Título y filtros aplicados
         doc.setFontSize(18);
         doc.text("Reporte de Asistencia", 14, 20);
-
         doc.setFontSize(10);
         doc.setTextColor(100);
         doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 28);
 
-        // Tabla principal
-        const tableColumn = ["Empleado", "Fecha", "Entrada", "Salida", "Estado"];
+        const tableColumn = ["Empleado", "Fecha"];
+        if (hasMañana) { tableColumn.push("T. Mañana", "Estado"); }
+        if (hasTarde) { tableColumn.push("T. Tarde", "Estado"); }
+
         const tableRows = data.records.map(r => {
             const emp = employees.find(e => e.id === r.employeeId);
-            return [
+            const isDoble = emp?.turno === 'Doble Turno';
+            const isTarde = isTardeShift(emp?.turno);
+            
+            const row = [
                 `${emp?.nombre} ${emp?.apellido}`,
-                formatFecha(r.fecha),
-                formatHora(r.horaEntrada),
-                formatHora(r.horaSalida),
-                r.estado
+                formatFecha(r.fecha)
             ];
+            
+            if (hasMañana) {
+                row.push(
+                    isDoble ? formatHora(r.manana?.hora) : (!isTarde ? formatHora(r.unico?.hora) : '-'),
+                    isDoble ? r.manana?.estado : (!isTarde ? (r.unico?.estado || '-') : '-')
+                );
+            }
+            
+            if (hasTarde) {
+                row.push(
+                    isDoble ? formatHora(r.tarde?.hora) : (isTarde ? formatHora(r.unico?.hora) : '-'),
+                    isDoble ? r.tarde?.estado : (isTarde ? (r.unico?.estado || '-') : '-')
+                );
+            }
+            
+            return row;
         });
 
-        autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 35,
-            theme: 'striped',
-            headStyles: { fillColor: [59, 130, 246] }
-        });
-
+        autoTable(doc, { head: [tableColumn], body: tableRows, startY: 35, theme: 'striped', headStyles: { fillColor: [59, 130, 246] } });
         doc.save(`Reporte_Asistencia_${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
@@ -525,33 +557,51 @@ _Reporte generado automáticamente._`.trim();
                                         <tr>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Empleado</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Fecha</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Entrada</th>
-                                            <th className="px-4 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Salida</th>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Estado</th>
+                                            {hasMañana && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Turno Mañana</th>}
+                                            {hasTarde && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Turno Tarde</th>}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {currentRecords.map(record => {
                                             const emp = employees.find(e => e.id === record.employeeId);
+                                            const isDoble = emp?.turno === 'Doble Turno';
+                                            const isTarde = isTardeShift(emp?.turno);
+                                            
+                                            const renderTurno = (turnoData) => {
+                                                if (!turnoData) return <span className="text-gray-300">-</span>;
+                                                return (
+                                                    <div className="flex flex-col items-center gap-1">
+                                                        <span className="font-mono text-sm text-gray-600">{formatHora(turnoData.hora)}</span>
+                                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                                            turnoData.estado === 'Presente' ? 'bg-green-100 text-green-700' :
+                                                            turnoData.estado === 'Tardanza' ? 'bg-yellow-100 text-yellow-700' :
+                                                            'bg-red-100 text-red-700'
+                                                        }`}>
+                                                            {turnoData.estado}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            };
+
                                             return (
                                                 <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
                                                     <td className="px-6 py-4">
                                                         <p className="font-bold text-gray-800">{emp?.nombre} {emp?.apellido}</p>
-                                                        <p className="text-xs text-gray-500">{emp?.area} | {emp?.sede}</p>
+                                                        <p className="text-xs text-gray-500">{emp?.area} | {emp?.sede} | {emp?.turno}</p>
                                                     </td>
                                                     <td className="px-6 py-4 font-medium text-gray-700">{formatFecha(record.fecha)}</td>
-                                                    <td className="px-6 py-4 text-gray-600 font-mono text-sm">{formatHora(record.horaEntrada)}</td>
-                                                    <td className="px-4 py-4 text-gray-600 font-mono text-sm">{formatHora(record.horaSalida)}</td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex justify-center">
-                                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full ${record.estado === 'Presente' ? 'bg-green-100 text-green-700' :
-                                                                record.estado === 'Tardanza' ? 'bg-yellow-100 text-yellow-700' :
-                                                                    'bg-red-100 text-red-700'
-                                                                }`}>
-                                                                {record.estado}
-                                                            </span>
-                                                        </div>
-                                                    </td>
+                                                    
+                                                    {hasMañana && (
+                                                        <td className="px-6 py-4 text-center">
+                                                            {isDoble ? renderTurno(record.manana) : (!isTarde ? renderTurno(record.unico) : <span className="text-gray-300">-</span>)}
+                                                        </td>
+                                                    )}
+                                                    
+                                                    {hasTarde && (
+                                                        <td className="px-6 py-4 text-center">
+                                                            {isDoble ? renderTurno(record.tarde) : (isTarde ? renderTurno(record.unico) : <span className="text-gray-300">-</span>)}
+                                                        </td>
+                                                    )}
                                                 </tr>
                                             );
                                         })}

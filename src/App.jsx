@@ -95,7 +95,7 @@ const AppContent = () => {
         const reg = registrosHoy[0];
 
         const yaCompleto = esDobleTurno
-            ? Boolean(reg && reg.horaSalida && reg.horaSalida !== '-')
+            ? registrosHoy.length >= 2 || Boolean(reg && reg.horaSalida && reg.horaSalida !== '-')
             : Boolean(registrosHoy.length > 0);
 
         if (yaCompleto) {

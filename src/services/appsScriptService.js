@@ -212,44 +212,70 @@ export const addAttendance = async (payload) => {
 
   const lastRecord = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
   const esDobleTurno = nombreTurno === 'Doble Turno';
+  const esTarde = hReal >= 13;
 
-  // Si ya tiene un registro de asistencia hoy:
-  if (lastRecord) {
-    // Si es Doble Turno y aún no se ha registrado la entrada de la tarde (guardada en hora_salida):
-    if (esDobleTurno && (!lastRecord.hora_salida || lastRecord.hora_salida === '' || lastRecord.hora_salida === '-')) {
-      const { error } = await supabase
-        .from('asistencias')
-        .update({ hora_salida: timeStr })
-        .eq('id', lastRecord.id);
+  if (esDobleTurno) {
+    // Para Doble Turno, buscaremos si ya marcó en la mañana (antes de 13h) o en la tarde (después de 13h)
+    const recordMañana = existingRecords?.find(r => parseInt(r.hora_entrada.split(':')[0]) < 13);
+    const recordTarde = existingRecords?.find(r => parseInt(r.hora_entrada.split(':')[0]) >= 13 || r.hora_salida);
 
-      if (error) return handleResponse(error);
-      return { success: true, data: { action: 'ENTRADA' } };
+    if (!esTarde && recordMañana) {
+      return { success: false, error: 'Ya registró asistencia esta mañana' };
+    }
+    if (esTarde && recordTarde) {
+      return { success: false, error: 'Ya registró asistencia esta tarde' };
     }
 
-    // Si no es Doble Turno o ya completó las 2 asistencias del día:
-    return {
-      success: false,
-      error: esDobleTurno
-        ? 'El alumno ya registró sus 2 asistencias de Doble Turno hoy'
-        : 'Ya registró asistencia hoy'
+    // Calcular estado
+    let estadoAsistencia = 'Presente';
+    if (!esTarde) {
+      // Reglas de la mañana (puede ser tardanza)
+      const { data: conf } = await supabase.from('configuracion').select('hora_entrada, tolerancia_minutos').limit(1).maybeSingle();
+      const horaEsperada = horaEntradaTurno || conf?.hora_entrada || '08:00';
+      const toleranciaMinutos = conf?.tolerancia_minutos || 15;
+      
+      const entradaEsperadaDate = new Date(`${fecha}T${horaEsperada}`);
+      entradaEsperadaDate.setMinutes(entradaEsperadaDate.getMinutes() + toleranciaMinutos);
+      const horaRealDate = new Date(`${fecha}T${timeStr}:00`);
+      
+      if (horaRealDate > entradaEsperadaDate) {
+        estadoAsistencia = 'Tardanza';
+      }
+    } else {
+      // Tarde siempre presente
+      estadoAsistencia = 'Presente';
+    }
+
+    const newRecord = {
+      employee_id: employeeId,
+      fecha: fecha,
+      hora_entrada: timeStr,
+      metodo_registro: metodoRegistro,
+      registrado_por: registradoPor,
+      estado: estadoAsistencia
     };
+    
+    const { error } = await supabase.from('asistencias').insert([newRecord]);
+    if (error) return handleResponse(error);
+    return { success: true, data: { action: 'ENTRADA' } };
   }
 
-  // === 1ª ASISTENCIA DEL DÍA (O TURNO ÚNICO) ===
+  // === SI NO ES DOBLE TURNO ===
+  if (lastRecord) {
+    return { success: false, error: 'Ya registró asistencia hoy' };
+  }
+
+  // === 1ª ASISTENCIA DEL DÍA (TURNO ÚNICO) ===
   let estadoAsistencia = 'Presente';
-  const turnoSinTardanza = nombreTurno === 'Tarde';
+  const turnoSinTardanza = nombreTurno && nombreTurno.toLowerCase().includes('tarde') && nombreTurno !== 'Doble Turno';
 
   if (!turnoSinTardanza) {
-    // Para Turno Mañana y la Mañana del Doble Turno: se respeta el horario de configuración y la tolerancia
     const { data: conf } = await supabase.from('configuracion').select('hora_entrada, tolerancia_minutos').limit(1).maybeSingle();
     const horaEsperada = horaEntradaTurno || conf?.hora_entrada || '08:00';
     const toleranciaMinutos = conf?.tolerancia_minutos || 15;
 
-    // Hora límite = hora de entrada esperada (del turno o configuración) + tolerancia
     const entradaEsperadaDate = new Date(`${fecha}T${horaEsperada}`);
     entradaEsperadaDate.setMinutes(entradaEsperadaDate.getMinutes() + toleranciaMinutos);
-
-    // Hora real en que el usuario está registrando
     const horaRealDate = new Date(`${fecha}T${timeStr}:00`);
 
     if (horaRealDate > entradaEsperadaDate) {

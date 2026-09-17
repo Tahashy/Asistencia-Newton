@@ -62,13 +62,15 @@ const Registro = () => {
             return { estado: 'SIN_REGISTRO', count: 0, max: esDobleTurno ? 2 : 1, esDobleTurno };
         }
 
-        const tieneSegundoTurno = Boolean(reg.horaSalida && reg.horaSalida !== '-');
-
-        if (esDobleTurno && !tieneSegundoTurno) {
-            return { estado: 'TURNO_PENDIENTE', count: 1, max: 2, esDobleTurno, registro: reg, registros: [reg] };
+        if (esDobleTurno) {
+            const tieneSegundoTurno = registrosHoy.length >= 2 || Boolean(reg.horaSalida && reg.horaSalida !== '-');
+            if (!tieneSegundoTurno) {
+                return { estado: 'TURNO_PENDIENTE', count: 1, max: 2, esDobleTurno, registro: reg, registros: registrosHoy };
+            }
+            return { estado: 'YA_REGISTRADO', count: 2, max: 2, esDobleTurno, registro: reg, registros: registrosHoy };
         }
 
-        return { estado: 'YA_REGISTRADO', count: esDobleTurno ? 2 : 1, max: esDobleTurno ? 2 : 1, esDobleTurno, registro: reg, registros: [reg] };
+        return { estado: 'YA_REGISTRADO', count: 1, max: 1, esDobleTurno, registro: reg, registros: registrosHoy };
     };
 
     const estadoHoy = getEstadoHoy(selectedEmployee);
@@ -115,7 +117,7 @@ const Registro = () => {
                         const esDobleTurno = employee.turno === 'Doble Turno';
                         const reg = registrosHoy[0];
                         const tieneEntrada = Boolean(reg);
-                        const tieneSegunda = Boolean(reg?.horaSalida && reg?.horaSalida !== '-');
+                        const tieneSegunda = esDobleTurno ? (registrosHoy.length >= 2 || Boolean(reg?.horaSalida && reg?.horaSalida !== '-')) : false;
 
                         const yaCompleto = esDobleTurno ? tieneSegunda : tieneEntrada;
                         const esParcial = esDobleTurno && tieneEntrada && !tieneSegunda;
@@ -185,7 +187,7 @@ const Registro = () => {
                                 </p>
                                 <p className="text-xs text-green-700">
                                     {estadoHoy.esDobleTurno
-                                        ? `1º Turno: ${estadoHoy.registro?.horaEntrada || '-'} · 2º Turno: ${estadoHoy.registro?.horaSalida || '-'}`
+                                        ? `1º Turno: ${estadoHoy.registros[0]?.horaEntrada || '-'} · 2º Turno: ${estadoHoy.registros[1]?.horaEntrada || estadoHoy.registros[0]?.horaSalida || '-'}`
                                         : `Entrada: ${estadoHoy.registro?.horaEntrada || '-'}`
                                     }
                                 </p>
