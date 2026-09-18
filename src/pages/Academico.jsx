@@ -166,11 +166,13 @@ ${i.chart} _Nota: El símbolo '--' indica que el alumno no rindió el examen cor
     const [rankingTipo, setRankingTipo] = useState('semanal');
     const [rankingSemana, setRankingSemana] = useState('1');
     const [rankingMes, setRankingMes] = useState(new Date().toISOString().slice(0, 7));
+    const [rankingSede, setRankingSede] = useState('');
+    const [rankingArea, setRankingArea] = useState('');
 
     const buildRanking = () => {
         const campo = rankingTipo === 'semanal' ? `S${rankingSemana}` : `Sim${rankingSemana}`;
         const resultado = {};
-        employees.filter(e => e.activo).forEach(emp => {
+        employees.filter(e => e.activo && (!rankingSede || e.sede === rankingSede) && (!rankingArea || e.area === rankingArea)).forEach(emp => {
             const record = academicRecords.find(r =>
                 String(r.ID_Alumno) === String(emp.id) && r.Mes === rankingMes
             );
@@ -217,7 +219,10 @@ ${i.chart} _Nota: El símbolo '--' indica que el alumno no rindió el examen cor
         doc.text(institucion.toUpperCase(), 105, 12, { align: 'center' });
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Ranking Académico — ${tipoLabel} · ${mesNombre} ${year}`, 105, 22, { align: 'center' });
+        
+        let subtitle = `Ranking Académico — ${tipoLabel} · ${mesNombre} ${year}`;
+        if (rankingArea) subtitle += ` · Área: ${rankingArea}`;
+        doc.text(subtitle, 105, 22, { align: 'center' });
 
         let currentY = 38;
         sedesConDatos.forEach(sede => {
@@ -288,7 +293,29 @@ ${i.chart} _Nota: El símbolo '--' indica que el alumno no rindió el examen cor
             {activeTab === 'ranking' ? (
                 <div className="space-y-6 animate-in fade-in duration-300">
                     <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Sede</label>
+                                <select
+                                    value={rankingSede}
+                                    onChange={(e) => setRankingSede(e.target.value)}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none bg-white transition-all"
+                                >
+                                    <option value="">Todas las Sedes</option>
+                                    {config?.sedes?.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Área</label>
+                                <select
+                                    value={rankingArea}
+                                    onChange={(e) => setRankingArea(e.target.value)}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 focus:outline-none bg-white transition-all"
+                                >
+                                    <option value="">Todas las Áreas</option>
+                                    {config?.areas?.map((a, i) => <option key={i} value={a}>{a}</option>)}
+                                </select>
+                            </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Mes</label>
                                 <input
