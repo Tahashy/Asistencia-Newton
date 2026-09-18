@@ -312,7 +312,7 @@ _Reporte generado automáticamente._`.trim();
         doc.setTextColor(100);
         doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 28);
 
-        const tableColumn = ["Empleado", "Fecha"];
+        const tableColumn = ["Alumno", "Fecha"];
         if (hasMañana) { tableColumn.push("T. Mañana", "Estado"); }
         if (hasTarde) { tableColumn.push("T. Tarde", "Estado"); }
 
@@ -555,7 +555,7 @@ _Reporte generado automáticamente._`.trim();
                                 <table className="w-full text-left">
                                     <thead className="bg-gray-50/50">
                                         <tr>
-                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Empleado</th>
+                                            <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Alumno</th>
                                             <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Fecha</th>
                                             {hasMañana && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Turno Mañana</th>}
                                             {hasTarde && <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Turno Tarde</th>}

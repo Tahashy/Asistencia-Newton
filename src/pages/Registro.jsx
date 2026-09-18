@@ -63,8 +63,16 @@ const Registro = () => {
         }
 
         if (esDobleTurno) {
+            const now = new Date();
+            const esTarde = now.getHours() >= 13;
+            const hasMorning = registrosHoy.some(r => parseInt(r.horaEntrada?.split(':')[0] || 0) < 13);
+            
             const tieneSegundoTurno = registrosHoy.length >= 2 || Boolean(reg.horaSalida && reg.horaSalida !== '-');
+            
             if (!tieneSegundoTurno) {
+                if (!esTarde && hasMorning) {
+                    return { estado: 'ESPERANDO_TARDE', count: 1, max: 2, esDobleTurno, registro: reg, registros: registrosHoy };
+                }
                 return { estado: 'TURNO_PENDIENTE', count: 1, max: 2, esDobleTurno, registro: reg, registros: registrosHoy };
             }
             return { estado: 'YA_REGISTRADO', count: 2, max: 2, esDobleTurno, registro: reg, registros: registrosHoy };
@@ -112,15 +120,8 @@ const Registro = () => {
 
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                     {filteredEmployees.map(employee => {
-                        const hoy = getCurrentDate();
-                        const registrosHoy = attendance.filter(a => a.employeeId === employee.id && a.fecha === hoy);
+                        const st = getEstadoHoy(employee);
                         const esDobleTurno = employee.turno === 'Doble Turno';
-                        const reg = registrosHoy[0];
-                        const tieneEntrada = Boolean(reg);
-                        const tieneSegunda = esDobleTurno ? (registrosHoy.length >= 2 || Boolean(reg?.horaSalida && reg?.horaSalida !== '-')) : false;
-
-                        const yaCompleto = esDobleTurno ? tieneSegunda : tieneEntrada;
-                        const esParcial = esDobleTurno && tieneEntrada && !tieneSegunda;
 
                         return (
                             <div
@@ -137,14 +138,20 @@ const Registro = () => {
                                         <p className="font-semibold text-lg">{employee.nombre} {employee.apellido}</p>
                                         <p className="text-sm text-gray-600">{employee.id} • {employee.area || 'Sin área'} • {employee.sede || 'Sin sede'}</p>
                                     </div>
-                                    {yaCompleto ? (
+                                    {st.estado === 'YA_REGISTRADO' ? (
                                         <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">
                                             {esDobleTurno ? '2/2 Completo ✓' : 'Presente ✓'}
                                         </span>
-                                    ) : esParcial ? (
-                                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
-                                            1/2 (Tarde pend.)
-                                        </span>
+                                    ) : st.estado === 'TURNO_PENDIENTE' ? (
+                                        <div className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border border-yellow-200 shadow-sm">
+                                            <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
+                                            {st.count}/{st.max} (Tarde pend.)
+                                        </div>
+                                    ) : st.estado === 'ESPERANDO_TARDE' ? (
+                                        <div className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border border-orange-200 shadow-sm">
+                                            <Clock className="w-3 h-3" />
+                                            {st.count}/{st.max} (Vuelva en la tarde)
+                                        </div>
                                     ) : (
                                         <UserCheck className="w-6 h-6 text-gray-400" />
                                     )}
@@ -177,6 +184,19 @@ const Registro = () => {
                         </div>
                     )}
 
+                    {/* Banner para Esperando Tarde (Doble Turno) */}
+                    {estadoHoy.estado === 'ESPERANDO_TARDE' && (
+                        <div className="flex items-center gap-3 bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                            <Clock className="w-5 h-5 text-orange-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-bold text-orange-800">
+                                    1ª Asistencia registrada a las {estadoHoy.registro?.horaEntrada || '-'}
+                                </p>
+                                <p className="text-xs text-orange-700">Aún no es la hora de la tarde (vuelva a partir de la 1:00 PM).</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Banner si ya completó todas las asistencias del día */}
                     {estadoHoy.estado === 'YA_REGISTRADO' && (
                         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
@@ -196,31 +216,38 @@ const Registro = () => {
                     )}
 
 
-                    {/* Botón de entrada */}
-                    <button
-                        onClick={handleAccion}
-                        disabled={isLoading || estadoHoy.estado === 'YA_REGISTRADO'}
-                        title={estadoHoy.estado === 'YA_REGISTRADO' ? 'Este alumno ya completó su asistencia hoy' : ''}
-                        className={`w-full font-semibold py-4 px-6 rounded-lg transition-all flex items-center justify-center gap-2 ${
-                            estadoHoy.estado !== 'YA_REGISTRADO' && !isLoading
-                                ? 'bg-green-500 hover:bg-green-600 text-white shadow-md active:scale-95 cursor-pointer'
-                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                    >
-                        <LogIn className="w-5 h-5" />
-                        {isLoading
-                            ? 'Registrando...'
-                            : estadoHoy.estado === 'TURNO_PENDIENTE'
-                                ? 'Registrar 2ª Entrada (Turno Tarde)'
-                                : 'Registrar Entrada'
-                        }
-                    </button>
-
-                    {estadoHoy.estado === 'YA_REGISTRADO' && (
-                        <p className="text-center text-sm text-gray-500 mt-4 flex items-center justify-center gap-1">
-                            <AlertCircle className="w-4 h-4" />
-                            Este alumno ya completó su asistencia hoy.
-                        </p>
+                    {/* Botones de acción según estado */}
+                    {estadoHoy.estado === 'SIN_REGISTRO' || estadoHoy.estado === 'TURNO_PENDIENTE' ? (
+                        <button
+                            onClick={handleAccion}
+                            disabled={isLoading}
+                            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg ${
+                                isLoading 
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                    : estadoHoy.estado === 'TURNO_PENDIENTE'
+                                        ? 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-200'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                            }`}
+                        >
+                            {isLoading ? (
+                                <div className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent" />
+                            ) : (
+                                <>
+                                    <CheckCircle className="w-5 h-5" />
+                                    {estadoHoy.estado === 'TURNO_PENDIENTE' ? 'Registrar Turno Tarde' : 'Registrar Entrada'}
+                                </>
+                            )}
+                        </button>
+                    ) : estadoHoy.estado === 'ESPERANDO_TARDE' ? (
+                        <div className="w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-gray-100 text-gray-500 border-2 border-gray-200 border-dashed">
+                            <Clock className="w-5 h-5" />
+                            Vuelva a partir de la 1:00 PM
+                        </div>
+                    ) : (
+                        <div className="w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-green-50 text-green-600 border-2 border-green-200">
+                            <CheckCircle className="w-5 h-5" />
+                            {estadoHoy.esDobleTurno ? 'Ambos turnos completados' : 'Asistencia Completada'}
+                        </div>
                     )}
                 </div>
             )}
