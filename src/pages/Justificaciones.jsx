@@ -137,7 +137,7 @@ const Justificaciones = () => {
                     </div>
 
                     {/* ── Combo buscador de alumno + turno + fecha ── */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className={`grid grid-cols-1 md:grid-cols-${selectedEmp?.turno === 'Doble Turno' ? '3' : '2'} gap-4`}>
 
                         {/* Combo con buscador */}
                         <div className="relative">
@@ -195,41 +195,27 @@ const Justificaciones = () => {
                             <input type="text" value={selectedEmployee} required readOnly className="sr-only" />
                         </div>
 
-                        {/* Selector de Turno a Justificar */}
-                        <div>
-                            <select
-                                value={selectedShift}
-                                onChange={(e) => setSelectedShift(e.target.value)}
-                                className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none bg-white font-medium text-gray-700"
-                            >
-                                {selectedEmp?.turno === 'Doble Turno' ? (
-                                    <>
-                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
-                                        <option value="Mañana">Justificar solo Turno Mañana</option>
-                                        <option value="Tarde">Justificar solo Turno Tarde</option>
-                                    </>
-                                ) : selectedEmp?.turno === 'Tarde' ? (
-                                    <>
-                                        <option value="Tarde">Justificar Turno Tarde</option>
-                                        <option value="Mañana">Justificar Turno Mañana</option>
-                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
-                                    </>
-                                ) : (
-                                    <>
-                                        <option value="Mañana">Justificar Turno Mañana</option>
-                                        <option value="Tarde">Justificar Turno Tarde</option>
-                                        <option value="Doble Turno (Ambos)">Justificar Doble Turno (Ambos)</option>
-                                    </>
-                                )}
-                            </select>
-                        </div>
+                        {/* Selector de Turno a Justificar (SOLO PARA DOBLE TURNO) */}
+                        {selectedEmp?.turno === 'Doble Turno' && (
+                            <div>
+                                <select
+                                    value={selectedShift}
+                                    onChange={(e) => setSelectedShift(e.target.value)}
+                                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none bg-white font-medium text-blue-700 border-blue-200"
+                                >
+                                    <option value="Doble Turno (Ambos)">Justificar Ambos Turnos</option>
+                                    <option value="Mañana">Justificar solo Turno Mañana</option>
+                                    <option value="Tarde">Justificar solo Turno Tarde</option>
+                                </select>
+                            </div>
+                        )}
 
                         {/* Fecha */}
                         <input
                             type="date"
                             value={selectedDate}
                             onChange={(e) => setSelectedDate(e.target.value)}
-                            className="px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
+                            className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none"
                             required
                         />
                     </div>
