@@ -575,6 +575,7 @@ _Reporte generado automáticamente._`.trim();
                                                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                                                             turnoData.estado === 'Presente' ? 'bg-green-100 text-green-700' :
                                                             turnoData.estado === 'Tardanza' ? 'bg-yellow-100 text-yellow-700' :
+                                                            turnoData.estado === 'Justificado' ? 'bg-blue-100 text-blue-700' :
                                                             'bg-red-100 text-red-700'
                                                         }`}>
                                                             {turnoData.estado}

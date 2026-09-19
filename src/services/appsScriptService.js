@@ -299,24 +299,71 @@ export const addAttendance = async (payload) => {
 
 
 export const saveJustification = async (payload) => {
-  const { employeeId, fecha, justificacion, registradoPor } = payload;
+  const { employeeId, fecha, justificacion, registradoPor, turnoJustificado } = payload;
   
-  const { data: existing } = await supabase
+  const { data: existingRecords, error: fetchError } = await supabase
     .from('asistencias')
-    .select('id')
+    .select('id, hora_entrada, hora_salida')
     .eq('employee_id', employeeId)
-    .eq('fecha', fecha)
+    .eq('fecha', fecha);
+    
+  if (fetchError) return handleResponse(fetchError);
+
+  const { data: emp } = await supabase
+    .from('empleados')
+    .select('turnos(nombre)')
+    .eq('id', employeeId)
     .maybeSingle();
 
-  if (existing) {
-    const { error } = await supabase.from('asistencias').update({ justificacion, estado: 'Justificado' }).eq('id', existing.id);
-    return handleResponse(error);
-  } else {
-    const { error } = await supabase.from('asistencias').insert([{
-      employee_id: employeeId, fecha, justificacion, registrado_por: registradoPor, estado: 'Justificado'
-    }]);
-    return handleResponse(error);
+  const esDobleTurno = emp?.turnos?.nombre === 'Doble Turno';
+
+  if (!esDobleTurno) {
+    if (existingRecords && existingRecords.length > 0) {
+      const { error } = await supabase.from('asistencias').update({ justificacion, estado: 'Justificado' }).eq('id', existingRecords[0].id);
+      return handleResponse(error);
+    } else {
+      const { error } = await supabase.from('asistencias').insert([{
+        employee_id: employeeId, fecha, justificacion, registrado_por: registradoPor, estado: 'Justificado'
+      }]);
+      return handleResponse(error);
+    }
   }
+
+  // === Lógica para Doble Turno ===
+  const recordMañana = existingRecords?.find(r => parseInt(r.hora_entrada?.split(':')[0] || 0) < 13);
+  const recordTarde = existingRecords?.find(r => parseInt(r.hora_entrada?.split(':')[0] || 0) >= 13 || r.hora_salida);
+  
+  const justificarManana = turnoJustificado === 'Mañana' || turnoJustificado === 'Doble Turno (Ambos)';
+  const justificarTarde = turnoJustificado === 'Tarde' || turnoJustificado === 'Doble Turno (Ambos)';
+
+  const operations = [];
+
+  if (justificarManana) {
+    if (recordMañana) {
+      operations.push(supabase.from('asistencias').update({ justificacion, estado: 'Justificado' }).eq('id', recordMañana.id));
+    } else {
+      operations.push(supabase.from('asistencias').insert([{
+        employee_id: employeeId, fecha, hora_entrada: '08:00', justificacion, registrado_por: registradoPor, estado: 'Justificado'
+      }]));
+    }
+  }
+
+  if (justificarTarde) {
+    if (recordTarde) {
+      operations.push(supabase.from('asistencias').update({ justificacion, estado: 'Justificado' }).eq('id', recordTarde.id));
+    } else {
+      operations.push(supabase.from('asistencias').insert([{
+        employee_id: employeeId, fecha, hora_entrada: '14:00', justificacion, registrado_por: registradoPor, estado: 'Justificado'
+      }]));
+    }
+  }
+
+  for (const op of operations) {
+    const { error } = await op;
+    if (error) return handleResponse(error);
+  }
+
+  return { success: true };
 };
 
 export const updateAttendance = async (attendanceId, data) => {

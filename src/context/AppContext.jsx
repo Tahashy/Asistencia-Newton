@@ -222,7 +222,8 @@ const AppProvider = ({ children }) => {
         employeeId,
         fecha,
         justificacion: textoJustificacion,
-        registradoPor: currentUser?.nombre || 'Admin'
+        registradoPor: currentUser?.nombre || 'Admin',
+        turnoJustificado // Pasando el turno explicitamente
       };
 
       // Usamos la nueva función del servicio

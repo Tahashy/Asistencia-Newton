@@ -100,9 +100,20 @@ const AppContent = () => {
 
         if (yaCompleto) {
             showToast(`${employee.nombre} ya completó sus asistencias de hoy`, 'info');
-        } else {
-            await registrarEntrada(employee.id, 'QR');
+            return;
         }
+
+        if (esDobleTurno) {
+            const now = new Date();
+            const esTarde = now.getHours() >= 13;
+            const hasMorning = registrosHoy.some(r => parseInt(r.horaEntrada?.split(':')[0] || 0) < 13);
+            if (!esTarde && hasMorning) {
+                showToast(`${employee.nombre} ya registró entrada de mañana. Vuelva en la tarde.`, 'warning');
+                return;
+            }
+        }
+
+        await registrarEntrada(employee.id, 'QR');
 
 
         // NO CERRAMOS EL ESCÁNER: Permitimos escaneos múltiples seguidos
