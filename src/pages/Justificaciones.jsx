@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-    CheckCircle, Search, X, Filter, Briefcase, Clock
+    CheckCircle, Search, X, Filter, Briefcase, Clock, Calendar
 } from 'lucide-react';
 
 const Justificaciones = () => {
@@ -241,30 +241,85 @@ const Justificaciones = () => {
                 </form>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold mb-4">Historial de Justificaciones</h3>
-                <div className="space-y-3">
-                    {attendance.filter(a => a.justificacion).length > 0 ? (
-                        attendance.filter(a => a.justificacion).map(record => {
-                            const emp = employees.find(e => e.id === record.employeeId);
-                            return (
-                                <div key={record.id} className="border-2 border-gray-200 rounded-lg p-4">
-                                    <div className="flex items-start justify-between">
-                                        <div>
-                                            <p className="font-semibold">{emp?.nombre} {emp?.apellido}</p>
-                                            <p className="text-sm text-gray-600">{record.fecha}</p>
-                                            <p className="text-sm text-gray-700 mt-2">{record.justificacion}</p>
-                                        </div>
-                                        <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
-                                            Justificado
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    ) : (
-                        <p className="text-center text-gray-500 py-8">No hay justificaciones registradas</p>
-                    )}
+            <div className="bg-white rounded-xl shadow-lg flex flex-col h-[500px]">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <h3 className="text-xl font-bold text-gray-800">Historial de Justificaciones</h3>
+                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
+                        {attendance.filter(a => a.justificacion).length} Registros
+                    </span>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-0 relative">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="sticky top-0 bg-gray-50/95 backdrop-blur z-10 shadow-sm">
+                            <tr>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Alumno</th>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Fecha</th>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Motivo</th>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {attendance.filter(a => a.justificacion).length > 0 ? (
+                                attendance
+                                    .filter(a => a.justificacion)
+                                    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+                                    .map(record => {
+                                        const emp = employees.find(e => e.id === record.employeeId);
+                                        
+                                        // Separar el turno del motivo si existe [Turno: X]
+                                        let motivoText = record.justificacion;
+                                        let turnoBadge = null;
+                                        const match = motivoText.match(/^\[Turno:\s*(.+?)\]\s*(.*)$/);
+                                        if (match) {
+                                            turnoBadge = match[1];
+                                            motivoText = match[2];
+                                        }
+
+                                        return (
+                                            <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-gray-800">{emp?.nombre} {emp?.apellido}</span>
+                                                        <span className="text-xs text-gray-500">{emp?.area} | {emp?.sede}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center text-gray-600 gap-2 text-sm font-medium">
+                                                        <Calendar className="w-4 h-4 text-gray-400" />
+                                                        {record.fecha}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 max-w-md">
+                                                    <div className="flex flex-col gap-1">
+                                                        {turnoBadge && (
+                                                            <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded w-max uppercase tracking-wide">
+                                                                {turnoBadge}
+                                                            </span>
+                                                        )}
+                                                        <span className="text-sm text-gray-700" title={motivoText}>
+                                                            {motivoText}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <span className="bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full inline-flex items-center gap-1.5">
+                                                        <CheckCircle className="w-3 h-3" />
+                                                        Justificado
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
+                                        No hay justificaciones registradas
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
