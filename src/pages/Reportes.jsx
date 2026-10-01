@@ -9,7 +9,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Reportes = () => {
-    const { employees, attendance, config, showToast } = useApp();
+    const { employees, attendance, config, showToast, getCurrentDate } = useApp();
     const [selectedEmployee, setSelectedEmployee] = useState('');
     const [selectedArea, setSelectedArea] = useState('');
     const [selectedSede, setSelectedSede] = useState('');
@@ -159,7 +159,7 @@ _Reporte generado automáticamente._`.trim();
             );
         }
 
-        const hoy = new Date().toISOString().split('T')[0];
+        const hoy = getCurrentDate();
         const inicio = dateRange.inicio || (selectedEmployee || selectedArea || selectedSede || selectedTurno ? '' : hoy);
         const fin = dateRange.fin || inicio || hoy;
 
@@ -168,7 +168,7 @@ _Reporte generado automáticamente._`.trim();
             const start = new Date(inicio + 'T00:00:00');
             const end = new Date(fin + 'T00:00:00');
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                dateList.push(d.toISOString().split('T')[0]);
+                dateList.push(getCurrentDate(d));
             }
         } else if (inicio) {
             dateList.push(inicio);
@@ -299,7 +299,7 @@ _Reporte generado automáticamente._`.trim();
         const worksheet = XLSX.utils.json_to_sheet(worksheetData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Asistencia");
-        XLSX.writeFile(workbook, `Reporte_Asistencia_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(workbook, `Reporte_Asistencia_${getCurrentDate()}.xlsx`);
     };
 
     const exportToPDF = () => {
@@ -344,7 +344,7 @@ _Reporte generado automáticamente._`.trim();
         });
 
         autoTable(doc, { head: [tableColumn], body: tableRows, startY: 35, theme: 'striped', headStyles: { fillColor: [59, 130, 246] } });
-        doc.save(`Reporte_Asistencia_${new Date().toISOString().split('T')[0]}.pdf`);
+        doc.save(`Reporte_Asistencia_${getCurrentDate()}.pdf`);
     };
 
     return (

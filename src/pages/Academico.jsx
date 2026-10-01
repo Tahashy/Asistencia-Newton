@@ -7,9 +7,9 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const Academico = () => {
-    const { employees, config, academicRecords, guardarNota, isLoading, showToast } = useApp();
+    const { employees, config, academicRecords, guardarNota, isLoading, showToast, getCurrentDate } = useApp();
     const [selectedEmployee, setSelectedEmployee] = useState('');
-    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+    const [selectedMonth, setSelectedMonth] = useState(getCurrentDate().slice(0, 7)); // YYYY-MM
     const [activeTab, setActiveTab] = useState('registro');
 
     // Estados para búsqueda y filtros de alumnos
@@ -165,7 +165,7 @@ ${i.chart} _Nota: El símbolo '--' indica que el alumno no rindió el examen cor
     // ── RANKING POR SEDE ────────────────────────────────────────
     const [rankingTipo, setRankingTipo] = useState('semanal');
     const [rankingSemana, setRankingSemana] = useState('1');
-    const [rankingMes, setRankingMes] = useState(new Date().toISOString().slice(0, 7));
+    const [rankingMes, setRankingMes] = useState(getCurrentDate().slice(0, 7));
     const [rankingSede, setRankingSede] = useState('');
     const [rankingArea, setRankingArea] = useState('');
 

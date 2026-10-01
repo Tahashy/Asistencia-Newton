@@ -8,7 +8,7 @@ import Pagination from '../components/ui/Pagination';
 import * as XLSX from 'xlsx';
 
 const Personal = () => {
-    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading, eliminarTodo, showToast } = useApp();
+    const { employees, agregarEmpleado, eliminarEmpleado, regenerarQR, config, actualizarEmpleado, isLoading, eliminarTodo, showToast, getCurrentDate } = useApp();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -55,7 +55,7 @@ const Personal = () => {
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Personal");
         
-        const fecha = new Date().toISOString().slice(0, 10);
+        const fecha = getCurrentDate();
         XLSX.writeFile(workbook, `Respaldo_Personal_${fecha}.xlsx`);
         showToast && showToast('Lista de personal exportada a Excel correctamente', 'success');
     };
