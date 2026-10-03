@@ -90,7 +90,8 @@ const Reportes = () => {
             wait: String.fromCodePoint(0x23F3),
             error: String.fromCodePoint(0x274C),
             trend: String.fromCodePoint(0x1F4C8),
-            star: String.fromCodePoint(0x2728)
+            star: String.fromCodePoint(0x2728),
+            info: String.fromCodePoint(0x2139)
         };
 
         const incidencias = [];
@@ -109,7 +110,7 @@ const Reportes = () => {
         if (topIncidencias.length > 0) {
             detString = '\n\n*DETALLE DE INCIDENCIAS:*\n' + 
                 topIncidencias.map(r => {
-                    const icon = r.estado === 'Tardanza' ? i.wait : i.error;
+                    const icon = r.estado === 'Tardanza' ? i.wait : (r.estado === 'Justificado' ? i.info : i.error);
                     const time = r.estado === 'Tardanza' ? ` (${formatHora(r.hora)})` : '';
                     const turnoTxt = r.turno ? ` [${r.turno}]` : '';
                     return `${icon} ${formatFecha(r.fecha)}${turnoTxt}: ${r.estado}${time}`;
@@ -134,6 +135,7 @@ ${i.chart} *RESUMEN GENERAL*
 ${i.check} *Asistencias:* ${data.presentes}
 ${i.wait} *Tardanzas:* ${data.tardanzas}
 ${i.error} *Faltas:* ${data.faltas}
+${i.info} *Justificados:* ${data.justificados}
 ${i.trend} *Cumplimiento:* ${data.porcentaje}%
 ${detString}
 
@@ -196,7 +198,7 @@ _Reporte generado automáticamente._`.trim();
         });
 
         const finalRecords = [];
-        let presentes = 0, tardanzas = 0, faltas = 0;
+        let presentes = 0, tardanzas = 0, faltas = 0, justificados = 0;
 
         empsToCheck.forEach(emp => {
             const daysToProcess = dateList.length > 0 ? dateList : [...new Set(attendance.filter(a => a.employeeId === emp.id).map(a => a.fecha))];
@@ -214,15 +216,18 @@ _Reporte generado automáticamente._`.trim();
                     if (rec.manana.estado === 'Presente') presentes++;
                     if (rec.manana.estado === 'Tardanza') tardanzas++;
                     if (rec.manana.estado.startsWith('Falta')) faltas++;
+                    if (rec.manana.estado === 'Justificado') justificados++;
                     
                     if (rec.tarde.estado === 'Presente') presentes++;
                     if (rec.tarde.estado === 'Tardanza') tardanzas++;
                     if (rec.tarde.estado.startsWith('Falta')) faltas++;
+                    if (rec.tarde.estado === 'Justificado') justificados++;
                 } else {
                     rec.unico = raw.unico || { hora: '-', estado: 'Falta' };
                     if (rec.unico.estado === 'Presente') presentes++;
                     if (rec.unico.estado === 'Tardanza') tardanzas++;
                     if (rec.unico.estado.startsWith('Falta')) faltas++;
+                    if (rec.unico.estado === 'Justificado') justificados++;
                 }
                 
                 // Si no buscamos fechas específicas y es falta, lo ignoramos para no ensuciar el reporte general
@@ -239,7 +244,7 @@ _Reporte generado automáticamente._`.trim();
         const total = presentes + tardanzas + faltas;
         return {
             records: finalRecords,
-            presentes, tardanzas, faltas,
+            presentes, tardanzas, faltas, justificados,
             porcentaje: total > 0 ? Math.round(((presentes + tardanzas) / total) * 100) : 0
         };
     };
@@ -501,7 +506,7 @@ _Reporte generado automáticamente._`.trim();
 
             {data ? (
                 <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         <div className="bg-white p-6 rounded-2xl shadow-lg border-b-4 border-green-500">
                             <p className="text-gray-500 text-sm font-semibold mb-1">Presentes</p>
                             <p className="text-3xl font-bold text-gray-800">{data.presentes}</p>
@@ -513,6 +518,10 @@ _Reporte generado automáticamente._`.trim();
                         <div className="bg-white p-6 rounded-2xl shadow-lg border-b-4 border-red-500">
                             <p className="text-gray-500 text-sm font-semibold mb-1">Faltas</p>
                             <p className="text-3xl font-bold text-gray-800">{data.faltas}</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-2xl shadow-lg border-b-4 border-indigo-500">
+                            <p className="text-gray-500 text-sm font-semibold mb-1">Justificados</p>
+                            <p className="text-3xl font-bold text-gray-800">{data.justificados}</p>
                         </div>
                         <div className="bg-white p-6 rounded-2xl shadow-lg border-b-4 border-blue-500">
                             <p className="text-gray-500 text-sm font-semibold mb-1">% Asistencia</p>
