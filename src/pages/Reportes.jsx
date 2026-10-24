@@ -147,6 +147,18 @@ _Reporte generado automáticamente._`.trim();
         window.open(url, '_blank');
     };
 
+    const normalizarFecha = (isoString) => {
+        if (!isoString) return '';
+        if (typeof isoString === 'string') return isoString.split('T')[0].trim();
+        if (isoString instanceof Date) {
+            const y = isoString.getFullYear();
+            const m = String(isoString.getMonth() + 1).padStart(2, '0');
+            const d = String(isoString.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+        return String(isoString).split('T')[0].trim();
+    };
+
     const getFilteredData = () => {
         const activeEmployees = employees.filter(e => e.activo);
         
@@ -167,10 +179,16 @@ _Reporte generado automáticamente._`.trim();
 
         const dateList = [];
         if (inicio && fin) {
-            const start = new Date(inicio + 'T00:00:00');
-            const end = new Date(fin + 'T00:00:00');
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                dateList.push(getCurrentDate(d));
+            const [y1, m1, d1] = inicio.split('-').map(Number);
+            const [y2, m2, d2] = fin.split('-').map(Number);
+            const curr = new Date(y1, m1 - 1, d1, 12, 0, 0);
+            const end = new Date(y2, m2 - 1, d2, 12, 0, 0);
+            while (curr <= end) {
+                const y = curr.getFullYear();
+                const m = String(curr.getMonth() + 1).padStart(2, '0');
+                const d = String(curr.getDate()).padStart(2, '0');
+                dateList.push(`${y}-${m}-${d}`);
+                curr.setDate(curr.getDate() + 1);
             }
         } else if (inicio) {
             dateList.push(inicio);
@@ -178,7 +196,9 @@ _Reporte generado automáticamente._`.trim();
 
         const recordsMap = new Map();
         attendance.forEach(a => {
-            const key = `${a.employeeId}_${a.fecha}`;
+            const fStr = normalizarFecha(a.fecha);
+            if (!fStr) return;
+            const key = `${a.employeeId}_${fStr}`;
             if (!recordsMap.has(key)) recordsMap.set(key, { manana: null, tarde: null, unico: null });
             const dayRecord = recordsMap.get(key);
             const emp = employees.find(e => e.id === a.employeeId);
@@ -200,14 +220,33 @@ _Reporte generado automáticamente._`.trim();
         const finalRecords = [];
         let presentes = 0, tardanzas = 0, faltas = 0, justificados = 0;
 
+        const diasLaborales = config?.diasLaborales || [1, 2, 3, 4, 5, 6];
+        const esDiaLaboral = (fechaStr) => {
+            const [y, m, d] = fechaStr.split('-').map(Number);
+            const diaNum = new Date(y, m - 1, d, 12, 0, 0).getDay();
+            return diasLaborales.includes(diaNum);
+        };
+
         empsToCheck.forEach(emp => {
-            const daysToProcess = dateList.length > 0 ? dateList : [...new Set(attendance.filter(a => a.employeeId === emp.id).map(a => a.fecha))];
+            const daysToProcess = dateList.length > 0 
+                ? dateList 
+                : [...new Set(attendance.filter(a => a.employeeId === emp.id).map(a => normalizarFecha(a.fecha)))];
             
             daysToProcess.forEach(fecha => {
-                const key = `${emp.id}_${fecha}`;
+                const fStr = normalizarFecha(fecha);
+                if (!fStr) return;
+
+                const key = `${emp.id}_${fStr}`;
                 const raw = recordsMap.get(key) || { manana: null, tarde: null, unico: null };
-                
-                const rec = { id: key, employeeId: emp.id, fecha, turno: emp.turno };
+                const tieneRegistro = raw.manana || raw.tarde || raw.unico;
+
+                // Si es una fecha futura a hoy, no generar falta
+                if (fStr > hoy && !tieneRegistro) return;
+
+                // Si es un día no laboral y no tiene asistencia registrada, no generar falta
+                if (!esDiaLaboral(fStr) && !tieneRegistro) return;
+
+                const rec = { id: key, employeeId: emp.id, fecha: fStr, turno: emp.turno };
                 
                 if (emp.turno === 'Doble Turno') {
                     rec.manana = raw.manana || { hora: '-', estado: 'Falta' };

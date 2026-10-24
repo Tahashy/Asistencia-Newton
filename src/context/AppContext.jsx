@@ -180,8 +180,12 @@ const AppProvider = ({ children }) => {
       const response = await appsScript.addAttendance(payload);
       
       if (response.success) {
-        // IMPORTANTE: Recargar asistencias en segundo plano sin bloquear la interfaz
-        appsScript.getAttendance().then(setAttendance).catch(console.error);
+        if (response.data?.record) {
+          const rec = response.data.record;
+          setAttendance(prev => [rec, ...prev.filter(a => a.id !== rec.id)]);
+        } else {
+          appsScript.getAttendance().then(setAttendance).catch(console.error);
+        }
         
         // El servidor v6.5 devuelve la acción en response.data.action
         const actionResult = response.data?.action || 'REGISTRO';

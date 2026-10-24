@@ -163,26 +163,81 @@ export const deleteAllData = async () => {
 // ASISTENCIAS
 // ============================================
 
-export const getAttendance = async () => {
-  const { data, error } = await supabase
-    .from('asistencias')
-    .select('*')
-    .order('fecha', { ascending: false })
-    .order('hora_entrada', { ascending: false });
+const formatAttendanceRecord = (a) => ({
+  ...a,
+  employeeId: a.employee_id,
+  horaEntrada: a.hora_entrada,
+  horaSalida: a.hora_salida,
+  metodoRegistro: a.metodo_registro,
+  registradoPor: a.registrado_por
+});
 
-  if (error) {
-    console.error('Error getAttendance:', error);
+export const getAttendance = async () => {
+  try {
+    // 1. Obtener conteo exacto de filas en Supabase
+    const { count, error: countErr } = await supabase
+      .from('asistencias')
+      .select('*', { count: 'exact', head: true });
+
+    if (countErr || !count) {
+      const { data, error } = await supabase
+        .from('asistencias')
+        .select('*')
+        .order('fecha', { ascending: false })
+        .order('hora_entrada', { ascending: false });
+
+      if (error) {
+        console.error('Error getAttendance fallback:', error);
+        return [];
+      }
+      return (data || []).map(formatAttendanceRecord);
+    }
+
+    const pageSize = 1000;
+    // Si no supera el límite de 1000, basta una sola petición
+    if (count <= pageSize) {
+      const { data, error } = await supabase
+        .from('asistencias')
+        .select('*')
+        .order('fecha', { ascending: false })
+        .order('hora_entrada', { ascending: false });
+
+      if (error) {
+        console.error('Error getAttendance <= 1000:', error);
+        return [];
+      }
+      return (data || []).map(formatAttendanceRecord);
+    }
+
+    // Si supera los 1000 registros, descargar en paralelo con Promise.all y .range()
+    const totalPages = Math.ceil(count / pageSize);
+    const promises = [];
+    for (let page = 0; page < totalPages; page++) {
+      const from = page * pageSize;
+      const to = (page + 1) * pageSize - 1;
+      promises.push(
+        supabase
+          .from('asistencias')
+          .select('*')
+          .order('fecha', { ascending: false })
+          .order('hora_entrada', { ascending: false })
+          .range(from, to)
+      );
+    }
+
+    const results = await Promise.all(promises);
+    const allRecords = [];
+    for (const res of results) {
+      if (res.data) {
+        allRecords.push(...res.data);
+      }
+    }
+
+    return allRecords.map(formatAttendanceRecord);
+  } catch (err) {
+    console.error('Error general en getAttendance:', err);
     return [];
   }
-
-  return data.map(a => ({
-    ...a,
-    employeeId: a.employee_id,
-    horaEntrada: a.hora_entrada,
-    horaSalida: a.hora_salida,
-    metodoRegistro: a.metodo_registro,
-    registradoPor: a.registrado_por
-  }));
 };
 
 export const addAttendance = async (payload) => {
@@ -258,9 +313,15 @@ export const addAttendance = async (payload) => {
       estado: estadoAsistencia
     };
     
-    const { error } = await supabase.from('asistencias').insert([newRecord]);
+    const { data: inserted, error } = await supabase.from('asistencias').insert([newRecord]).select().single();
     if (error) return handleResponse(error);
-    return { success: true, data: { action: 'ENTRADA' } };
+    return { 
+      success: true, 
+      data: { 
+        action: 'ENTRADA',
+        record: inserted ? formatAttendanceRecord(inserted) : null
+      } 
+    };
   }
 
   // === SI NO ES DOBLE TURNO ===
@@ -295,9 +356,15 @@ export const addAttendance = async (payload) => {
     estado: estadoAsistencia
   };
   
-  const { error } = await supabase.from('asistencias').insert([newRecord]);
+  const { data: inserted, error } = await supabase.from('asistencias').insert([newRecord]).select().single();
   if (error) return handleResponse(error);
-  return { success: true, data: { action: 'ENTRADA' } };
+  return { 
+    success: true, 
+    data: { 
+      action: 'ENTRADA',
+      record: inserted ? formatAttendanceRecord(inserted) : null
+    } 
+  };
 };
 
 
